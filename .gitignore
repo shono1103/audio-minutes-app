@@ -1,0 +1,50 @@
+# macOS
+.DS_Store
+._*
+
+# 会議内容を含む生成データ・音声・モデル・資格情報は追跡しない
+/var/
+**/var/sessions/
+*.wav
+*.m4a
+*.mp3
+*.flac
+!tests/fixtures/audio/*.wav
+models/
+*.bin
+*.ct2
+.claude-credentials/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Swift
+.build/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.swiftpm/
+
+# Node
+node_modules/
+extensions/chrome/dist/
+
+# 秘密・端末ローカル設定
+.env
+.env.*
+!.env.example
+deploy/**/*.local.yml
+.claude/settings.local.json
+
+# エディタ
+.vscode/
+.idea/
+*.swp
