@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/session.v1.schema.json",
+  "title": "Session v1",
+  "description": "API が返すセッション表現。表示状態 (status) と個別 job の状態、録音状態を混同しない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "owner_id",
+    "title",
+    "title_edited_by_user",
+    "input_kind",
+    "language_mode",
+    "allow_external_send",
+    "status",
+    "created_at",
+    "updated_at",
+    "tracks",
+    "current_minutes_version_id",
+    "transcript_revision",
+    "audio_retained",
+    "shared_with"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "session/1"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string"
+    },
+    "title_edited_by_user": {
+      "type": "boolean"
+    },
+    "title_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "input_kind": {
+      "enum": [
+        "recorded_dual_track",
+        "imported_mixed"
+      ]
+    },
+    "language_mode": {
+      "enum": [
+        "auto",
+        "ja",
+        "en",
+        "mixed"
+      ]
+    },
+    "allow_external_send": {
+      "type": "boolean"
+    },
+    "format_snapshot": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "format-profile.v1.schema.json"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "uploading",
+        "validating",
+        "queued",
+        "transcribing",
+        "transcribed",
+        "queued_minutes",
+        "generating_minutes",
+        "completed",
+        "failed",
+        "deleting"
+      ],
+      "description": "transcribed は外部送信禁止などで正常停止した状態。失敗ではない"
+    },
+    "failure": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "error.v1.schema.json#/$defs/job_failure"
+        }
+      ]
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "duration_ms": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "track_id",
+          "role",
+          "upload_state"
+        ],
+        "properties": {
+          "track_id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "app",
+              "microphone",
+              "mixed"
+            ]
+          },
+          "upload_state": {
+            "enum": [
+              "pending",
+              "uploading",
+              "completed",
+              "expired",
+              "cancelled"
+            ]
+          },
+          "upload_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upload_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upload_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "current_minutes_version_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "transcript_revision": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "review_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "audio_retained": {
+      "type": "boolean",
+      "description": "false なら保持期限で音声だけ削除済み。再文字起こし不可"
+    },
+    "audio_expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "shared_with": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "is_shared_view": {
+      "type": "boolean",
+      "description": "閲覧者が共有先なら true。編集・再生成・版履歴は不可"
+    }
+  }
+}

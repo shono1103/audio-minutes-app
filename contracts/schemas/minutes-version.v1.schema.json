@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/minutes-version.v1.schema.json",
+  "title": "MinutesVersion v1",
+  "description": "議事録の不変の版。本文は artifact (minutes_md) に置き、ここはメタデータ。現在版 pointer は session 側が持つ。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "version_id", "session_id", "version_number", "kind", "created_by", "created_at", "parent_version_id", "transcript_revision", "format_snapshot", "artifact_id"],
+  "properties": {
+    "schema_version": { "const": "minutes-version/1" },
+    "version_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "format": "uuid" },
+    "version_number": { "type": "integer", "minimum": 1 },
+    "kind": { "enum": ["claude_generated", "manual_edit", "claude_regenerated", "restored"] },
+    "created_by": { "type": "string", "description": "user_id または system:minutes-worker" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "parent_version_id": { "type": ["string", "null"], "format": "uuid" },
+    "restored_from_version_id": { "type": ["string", "null"], "format": "uuid" },
+    "transcript_revision": { "type": ["integer", "null"] },
+    "format_snapshot": { "oneOf": [ { "type": "null" }, { "$ref": "format-profile.v1.schema.json" } ] },
+    "instructions": { "type": ["string", "null"], "description": "再生成時の不足内容・修正指示。会議内容として保護しログへ出さない" },
+    "insufficient_information": { "type": "array", "items": { "type": "string" } },
+    "title_proposal": { "type": ["string", "null"] },
+    "artifact_id": { "type": "string" },
+    "is_candidate": { "type": "boolean", "default": false, "description": "競合時に現在版へ自動昇格せず明示選択を待つ候補版" }
+  }
+}

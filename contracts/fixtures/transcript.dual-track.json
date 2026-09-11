@@ -1,0 +1,35 @@
+{
+  "schema_version": "transcript/1",
+  "session_id": "7c9b2b1e-6b6d-4f7a-9d3e-1a2b3c4d5e6f",
+  "revision": 1,
+  "input_kind": "recorded_dual_track",
+  "language_mode": "auto",
+  "tracks": [
+    { "track_id": "app-audio", "role": "app", "source_artifact_id": "art_01J7Q0AAAAAAAAAAAAAAAAAAA1", "start_offset_ms": 0, "duration_ms": 1800000, "normalization": { "original_container": "wav", "original_codec": "pcm_s16le", "original_sample_rate": 16000, "original_channels": 1, "target_sample_rate": 16000, "target_channels": 1 } },
+    { "track_id": "microphone", "role": "microphone", "source_artifact_id": "art_01J7Q0AAAAAAAAAAAAAAAAAAA2", "start_offset_ms": 12, "duration_ms": 1799988 }
+  ],
+  "segments": [
+    { "id": "seg-0001", "track_id": "app-audio", "source": "app", "start_ms": 1200, "end_ms": 4800, "text": "では定例を始めます。", "language": "ja", "language_probability": 0.98, "model_id": "dropbox-dash/faster-whisper-large-v3-turbo", "model_revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf", "engine": "faster-whisper", "engine_version": "1.2.1", "strategy": "vad_turbo", "avg_logprob": -0.21, "no_speech_prob": 0.01, "words": null, "replaced_by_review": null },
+    { "id": "seg-0002", "track_id": "microphone", "source": "microphone", "start_ms": 4900, "end_ms": 7300, "text": "Sounds good, let's start with the roadmap.", "language": "en", "language_probability": 0.97, "model_id": "dropbox-dash/faster-whisper-large-v3-turbo", "model_revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf", "engine": "faster-whisper", "engine_version": "1.2.1", "strategy": "vad_turbo", "avg_logprob": -0.18, "no_speech_prob": 0.02, "words": null, "replaced_by_review": null },
+    { "id": "seg-0003", "track_id": "app-audio", "source": "app", "start_ms": 7000, "end_ms": 9500, "text": "はい、まずロードマップから。", "language": "ja", "language_probability": 0.99, "model_id": "kotoba-tech/kotoba-whisper-v2.0-faster", "model_revision": "f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc", "engine": "faster-whisper", "engine_version": "1.2.1", "strategy": "vad_turbo", "avg_logprob": -0.15, "no_speech_prob": 0.01, "words": null, "replaced_by_review": "rev-0001" }
+  ],
+  "review": [
+    { "id": "rev-0001", "track_id": "app-audio", "start_ms": 7000, "end_ms": 9500, "reason": "speech_without_text", "resolved": true,
+      "attempts": [
+        { "attempt": 1, "model_id": "kotoba-tech/kotoba-whisper-v2.0-faster", "model_revision": "f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc", "language": "ja", "language_probability": 0.99, "candidate_text": "はい、まずロードマップから。", "accepted": true, "reason": "元区間が空で候補が VAD 窓の 80% 以上を覆う" }
+      ] }
+  ],
+  "processing": {
+    "engine": "faster-whisper",
+    "engine_version": "1.2.1",
+    "strategy": "vad_turbo",
+    "models": [
+      { "profile": "multilingual", "model_id": "dropbox-dash/faster-whisper-large-v3-turbo", "model_revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf", "compute_type": "int8", "quantization": null, "file_sha256": null },
+      { "profile": "ja", "model_id": "kotoba-tech/kotoba-whisper-v2.0-faster", "model_revision": "f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc", "compute_type": "int8", "quantization": null, "file_sha256": null }
+    ],
+    "decode": { "beam_size": 5, "word_timestamps": false, "measurement": "resident" },
+    "backend": { "requested_backend": "cpu", "effective_backend": "cpu", "gpu_verified": false, "gpu_name": null, "driver": null, "vm": "colima-vz", "fallback_reason": null, "software_renderer_detected": null },
+    "resources": { "cpu_arch": "aarch64", "cpu_count": 4, "memory_limit_bytes": 8589934592, "peak_memory_bytes": null, "threads": 4 },
+    "timings": { "total_ms": 2327000, "audio_duration_ms": 1800000, "rtf": 1.293 }
+  }
+}

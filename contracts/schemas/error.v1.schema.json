@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/error.v1.schema.json",
+  "title": "Error v1",
+  "description": "API のエラー応答とジョブ失敗の共通形。秘密・本文・ローカルパスを含めない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "error"
+  ],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "request_id"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/error_code"
+        },
+        "message": {
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "auth",
+            "upload",
+            "validation",
+            "transcription",
+            "minutes",
+            "storage",
+            "admin",
+            null
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "retained_artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "details": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "error_code": {
+      "enum": [
+        "invalid_request",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "conflict",
+        "rate_limited",
+        "invalid_input",
+        "unsupported_format",
+        "limit_exceeded",
+        "checksum_mismatch",
+        "upload_incomplete",
+        "upload_expired",
+        "decode_failed",
+        "engine_crashed",
+        "timeout",
+        "cancelled",
+        "gpu_unavailable",
+        "unsupported_model",
+        "backend_error",
+        "claude_not_authenticated",
+        "claude_credential_conflict",
+        "claude_rate_limited",
+        "claude_cli_incompatible",
+        "claude_output_invalid",
+        "claude_unknown_outcome",
+        "external_send_forbidden",
+        "not_connected_owner",
+        "audio_deleted",
+        "internal"
+      ]
+    },
+    "job_failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "stage",
+        "retryable",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/error_code"
+        },
+        "stage": {
+          "enum": [
+            "transcription",
+            "minutes",
+            "storage"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "description": "利用者向けの短い説明。本文・秘密・パスを含めない"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "retained_artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "diagnostics": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "機械可読な診断 (backend、モデル、attempt など)。stderr 全文は入れない"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

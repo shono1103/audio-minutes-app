@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "claude_not_authenticated",
+    "message": "Claude にログインしていません。設定 > Claude 接続から owner が再ログインしてください。",
+    "stage": "minutes",
+    "retryable": true,
+    "request_id": "req_01J7Q0DDDDDDDDDDDDDDDDDDD1",
+    "retained_artifacts": ["art_01J7Q0BBBBBBBBBBBBBBBBBBB1"]
+  }
+}

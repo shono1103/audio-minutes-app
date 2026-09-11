@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/format-profile.v1.schema.json",
+  "title": "FormatProfile v1",
+  "description": "議事録フォーマットプロファイル。作成者本人だけが閲覧・変更する。セッションには使用時点の版と内容をスナップショットとして保存する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "version", "name", "output_language", "sections", "additional_instructions", "template_markdown"],
+  "properties": {
+    "schema_version": { "const": "format-profile/1" },
+    "profile_id": { "type": "string", "format": "uuid" },
+    "owner_id": { "type": ["string", "null"], "format": "uuid" },
+    "version": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "output_language": { "enum": ["ja", "en"] },
+    "builtin": { "type": "boolean", "default": false, "description": "組み込み標準。直接編集せず複製する" },
+    "is_default": { "type": "boolean", "default": false },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "title", "enabled"],
+        "properties": {
+          "key": { "enum": ["summary", "decisions", "action_items", "open_questions", "topics", "transcript_references", "custom"] },
+          "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "enabled": { "type": "boolean" },
+          "instructions": { "type": ["string", "null"], "maxLength": 2000 }
+        }
+      }
+    },
+    "additional_instructions": { "type": "string", "maxLength": 4000 },
+    "template_markdown": {
+      "type": "string",
+      "maxLength": 20000,
+      "description": "利用可能な変数: {{title}} {{started_at}} {{duration}} {{section:<key>}}。未対応変数は保存前検証で拒否"
+    },
+    "updated_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

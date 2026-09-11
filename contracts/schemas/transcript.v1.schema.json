@@ -1,0 +1,626 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/transcript.v1.schema.json",
+  "title": "Transcript v1",
+  "description": "文字起こし成果物 (transcript.json)。segment 時刻は必須、単語時刻は optional で未取得なら生成しない。別トラックの同時刻は重複として削除せず時刻順で保持する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "revision",
+    "input_kind",
+    "language_mode",
+    "tracks",
+    "segments",
+    "review",
+    "processing"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "transcript/1"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "再文字起こしごとに増える"
+    },
+    "input_kind": {
+      "enum": [
+        "recorded_dual_track",
+        "imported_mixed"
+      ]
+    },
+    "language_mode": {
+      "enum": [
+        "auto",
+        "ja",
+        "en",
+        "mixed"
+      ]
+    },
+    "tracks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "track_id",
+          "role",
+          "source_artifact_id",
+          "start_offset_ms",
+          "duration_ms"
+        ],
+        "properties": {
+          "track_id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "app",
+              "microphone",
+              "mixed"
+            ]
+          },
+          "source_artifact_id": {
+            "type": "string"
+          },
+          "start_offset_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "normalization": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "original_container": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "original_codec": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "original_sample_rate": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "original_channels": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "target_sample_rate": {
+                    "type": "integer"
+                  },
+                  "target_channels": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/segment"
+      }
+    },
+    "review": {
+      "type": "array",
+      "description": "要確認区間。音声あり出力なし・極端に疎な区間と再処理の履歴",
+      "items": {
+        "$ref": "#/$defs/review_item"
+      }
+    },
+    "processing": {
+      "$ref": "#/$defs/processing"
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "track_id",
+        "source",
+        "start_ms",
+        "end_ms",
+        "text",
+        "language",
+        "language_probability",
+        "model_id",
+        "model_revision",
+        "engine",
+        "engine_version",
+        "strategy"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "track_id": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "app",
+            "microphone",
+            "mixed"
+          ]
+        },
+        "start_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "共通時刻基準 (track の start_offset_ms を加算済み)"
+        },
+        "end_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "ja",
+            "en",
+            "und"
+          ],
+          "description": "und は判定不能"
+        },
+        "language_probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "取得できない engine では null。捏造しない"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "model_revision": {
+          "type": "string"
+        },
+        "engine": {
+          "enum": [
+            "faster-whisper",
+            "whisper.cpp"
+          ]
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "vad_turbo",
+            "routed",
+            "whole_retry",
+            "fixed_ja",
+            "fixed_en",
+            "mixed"
+          ]
+        },
+        "avg_logprob": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "no_speech_prob": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "words": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start_ms",
+              "end_ms",
+              "word"
+            ],
+            "properties": {
+              "start_ms": {
+                "type": "integer"
+              },
+              "end_ms": {
+                "type": "integer"
+              },
+              "word": {
+                "type": "string"
+              },
+              "probability": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "replaced_by_review": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "要確認再処理で採用された候補由来なら review item の id"
+        }
+      }
+    },
+    "review_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "track_id",
+        "start_ms",
+        "end_ms",
+        "reason",
+        "attempts",
+        "resolved"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "track_id": {
+          "type": "string"
+        },
+        "start_ms": {
+          "type": "integer"
+        },
+        "end_ms": {
+          "type": "integer"
+        },
+        "reason": {
+          "enum": [
+            "speech_without_text",
+            "sparse_text",
+            "low_language_confidence",
+            "language_boundary"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attempt",
+              "model_id",
+              "model_revision",
+              "language",
+              "language_probability",
+              "accepted",
+              "reason"
+            ],
+            "properties": {
+              "attempt": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "model_id": {
+                "type": "string"
+              },
+              "model_revision": {
+                "type": "string"
+              },
+              "language": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "und",
+                  null
+                ]
+              },
+              "language_probability": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "candidate_text": {
+                "type": "string"
+              },
+              "accepted": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "description": "採否理由"
+              }
+            }
+          }
+        },
+        "resolved": {
+          "type": "boolean"
+        }
+      }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "engine_version",
+        "strategy",
+        "models",
+        "backend",
+        "resources",
+        "timings"
+      ],
+      "properties": {
+        "engine": {
+          "enum": [
+            "faster-whisper",
+            "whisper.cpp"
+          ]
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "vad_turbo",
+            "routed",
+            "whole_retry",
+            "fixed_ja",
+            "fixed_en",
+            "mixed"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "profile",
+              "model_id",
+              "model_revision"
+            ],
+            "properties": {
+              "profile": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "multilingual"
+                ]
+              },
+              "model_id": {
+                "type": "string"
+              },
+              "model_revision": {
+                "type": "string"
+              },
+              "compute_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quantization": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "file_sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "decode": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "beam_size, vad 設定, specialist 閾値, word_timestamps など主要な推論設定"
+            }
+          ]
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requested_backend",
+            "effective_backend",
+            "gpu_verified"
+          ],
+          "properties": {
+            "requested_backend": {
+              "enum": [
+                "cpu",
+                "vulkan"
+              ]
+            },
+            "effective_backend": {
+              "enum": [
+                "cpu",
+                "vulkan",
+                "unknown"
+              ]
+            },
+            "gpu_verified": {
+              "type": "boolean",
+              "description": "デバイスファイルの存在ではなく、engine が選んだ device と実演算の照合結果"
+            },
+            "gpu_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "driver": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "vm": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fallback_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "software_renderer_detected": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cpu_arch",
+            "cpu_count"
+          ],
+          "properties": {
+            "cpu_arch": {
+              "type": "string"
+            },
+            "cpu_count": {
+              "type": "integer"
+            },
+            "memory_limit_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "peak_memory_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "threads": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
+        "timings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total_ms"
+          ],
+          "properties": {
+            "total_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "decode_audio_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "vad_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "language_detection_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "model_load_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "transcribe_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "review_retry_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "merge_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "audio_duration_ms": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "rtf": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "transcribe 工程全体 / 音声長。CLI 起動込みか常駐かは decode.measurement に明記"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "worker-result/1",
+  "kind": "transcription",
+  "outcome": "succeeded",
+  "artifacts": [
+    { "artifact_id": "art_01J7Q0BBBBBBBBBBBBBBBBBBB1", "kind": "transcript_json", "byte_size": 20480, "sha256": "0000000000000000000000000000000000000000000000000000000000000011", "content_type": "application/json" },
+    { "artifact_id": "art_01J7Q0BBBBBBBBBBBBBBBBBBB2", "kind": "transcript_md", "byte_size": 8192, "sha256": "0000000000000000000000000000000000000000000000000000000000000012", "content_type": "text/markdown" }
+  ],
+  "processing": {
+    "engine": "faster-whisper",
+    "engine_version": "1.2.1",
+    "strategy": "vad_turbo",
+    "models": [
+      { "profile": "multilingual", "model_id": "dropbox-dash/faster-whisper-large-v3-turbo", "model_revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf", "compute_type": "int8", "quantization": null, "file_sha256": null }
+    ],
+    "decode": { "beam_size": 5, "word_timestamps": false, "vad": { "threshold": 0.5, "min_speech_ms": 100, "min_silence_ms": 500, "pad_ms": 250 }, "measurement": "resident" },
+    "backend": { "requested_backend": "cpu", "effective_backend": "cpu", "gpu_verified": false, "gpu_name": null, "driver": null, "vm": "colima-vz", "fallback_reason": null, "software_renderer_detected": null },
+    "resources": { "cpu_arch": "aarch64", "cpu_count": 4, "memory_limit_bytes": 8589934592, "peak_memory_bytes": 4069523456, "threads": 4 },
+    "timings": { "total_ms": 2327000, "decode_audio_ms": 4000, "vad_ms": 12000, "language_detection_ms": null, "model_load_ms": 9000, "transcribe_ms": 2290000, "review_retry_ms": null, "merge_ms": 200, "audio_duration_ms": 1800000, "rtf": 1.293 }
+  }
+}

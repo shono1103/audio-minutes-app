@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/worker-result.v1.schema.json",
+  "title": "WorkerResult v1",
+  "description": "worker が complete 時に jobs.result へ書く結果。API の reconciler がこれを読んで成果物を確定する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "outcome",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "worker-result/1"
+    },
+    "kind": {
+      "enum": [
+        "transcription",
+        "minutes_generation"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "succeeded",
+        "unknown"
+      ],
+      "description": "unknown は Claude 送信後に応答を失った「実行結果不明」。自動再送しない"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "kind",
+          "byte_size",
+          "sha256"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "transcript_json",
+              "transcript_md",
+              "minutes_md"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "content_type": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "processing": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "transcript.v1.schema.json#/$defs/processing"
+        }
+      ]
+    },
+    "title_proposal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "insufficient_information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "claude": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cli_version": {
+              "type": "string"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chunks": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "input_tokens_estimate": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

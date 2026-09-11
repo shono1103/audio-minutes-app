@@ -1,0 +1,32 @@
+[project]
+name = "audio-minutes-contracts"
+version = "0.1.0"
+description = "audio-minutes の版付き契約 (schema の写し) と Queue / ArtifactStore アダプター"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "pydantic>=2.9,<3",
+  "jsonschema>=4.23,<5",
+  "psycopg[binary]>=3.2,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/audio_minutes_contracts"]
+
+[tool.hatch.build]
+include = ["src/audio_minutes_contracts/**", "schemas/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
