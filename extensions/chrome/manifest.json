@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "audio-minutes Meet 連携 (開発版)",
+  "version": "0.1.0",
+  "description": "Google Meet タブの音声を audio-minutes へ渡す。meet.google.com のタブだけを扱い、音声を外部へ送らない。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxYg0nF43EOCiRtiPrSejN4dFGGt7gY5UdGjDvxRBeX4Sy54Zu6h1mPNw0z/qshj0H2wOf3KFGjHPT6vb4Xx/XmAT1o5YHBSBKHS+sWy5k8kzmUiHhxNxVlIAQF4CGWsiecLhKoV0Iyfb8BeKOvxFDd02bVShioe/UQYRK4Jcwv2+r6xxKSV49fTIuc25x5GsJ66GniaDFCMWx7K6DRD9UoWcxeICM9UuWLk6QnHIufhVLMrymR8vwf7zmbmjKBRskKKgrKskdHb9PY+nSM+ROcg+nKGIEyQECvIOU7yytYkcyECNZaRiTgHflemUoqRKMyHZv8bM2NbQDOsBj4QzzwIDAQAB",
+  "minimum_chrome_version": "120",
+  "permissions": ["tabCapture", "tabs", "nativeMessaging", "offscreen", "storage"],
+  "host_permissions": ["https://meet.google.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "audio-minutes: Chrome で録音を許可",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

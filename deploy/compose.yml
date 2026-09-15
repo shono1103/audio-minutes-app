@@ -1,0 +1,229 @@
+# audio-minutes サーバー側コンポーネント (docs/integration-contract.md が正)
+#
+#   docker compose --project-name audio-minutes -f deploy/compose.yml --profile cpu up -d
+#   docker compose --project-name audio-minutes -f deploy/compose.yml --profile gpu up -d   # 別 Colima profile (krunkit) 上で
+#
+# 公開するのは minutes-api の 127.0.0.1:8787 だけ。DB・worker・内部制御 API は publish しない。
+# 秘密は deploy/profiles/<profile>/.env (scripts/install.sh が生成) から読む。
+
+name: audio-minutes
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "7"
+
+x-worker-resources: &worker-resources
+  deploy:
+    resources:
+      limits:
+        cpus: "${AM_WORKER_CPUS:-4}"
+        memory: "${AM_WORKER_MEMORY:-8g}"
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: am_api
+      POSTGRES_PASSWORD: ${AM_API_DB_PASSWORD:?AM_API_DB_PASSWORD を .env に設定してください}
+      POSTGRES_DB: audio_minutes
+      AM_WORKER_DB_PASSWORD: ${AM_WORKER_DB_PASSWORD:?AM_WORKER_DB_PASSWORD を .env に設定してください}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U am_api -d audio_minutes"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+  minutes-api:
+    image: audio-minutes/minutes-api:${AM_IMAGE_TAG:-0.1.0}
+    build:
+      context: ..
+      dockerfile: services/minutes-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # loopback だけへ bind (ADR-0008)
+      - "127.0.0.1:${AM_API_PORT:-8787}:8000"
+    environment:
+      AM_LOG_LEVEL: ${AM_LOG_LEVEL:-info}
+      AM_LOG_DIR: /var/log/audio-minutes
+      AM_SHARED_GID: "10100"
+      AM_UPDATE_MAINTENANCE_FILE: /var/log/audio-minutes/.update-maintenance
+      AM_DATABASE_URL: postgresql://am_api:${AM_API_DB_PASSWORD}@db:5432/audio_minutes
+      AM_ARTIFACTS_DIR: /var/lib/audio-minutes/artifacts
+      AM_UPLOADS_DIR: /var/lib/audio-minutes/uploads
+      AM_SECRET_KEY: ${AM_SECRET_KEY:?AM_SECRET_KEY を .env に設定してください}
+      AM_INTERNAL_TOKEN: ${AM_INTERNAL_TOKEN:?AM_INTERNAL_TOKEN を .env に設定してください}
+      # canonical origin。host は AM_RP_ID と一致させる (WebAuthn の RP ID は IP 不可)
+      AM_PUBLIC_BASE_URL: ${AM_PUBLIC_BASE_URL:-http://localhost:8787}
+      AM_RP_ID: ${AM_RP_ID:-localhost}
+      AM_ALLOWED_ORIGINS: ${AM_ALLOWED_ORIGINS:-http://localhost:8787}
+      AM_MINUTES_WORKER_URL: http://minutes-worker:8791
+      AM_RETENTION_UPLOAD_HOURS: ${AM_RETENTION_UPLOAD_HOURS:-24}
+      AM_RETENTION_AUDIO_DAYS: ${AM_RETENTION_AUDIO_DAYS:-30}
+      AM_RETENTION_LOG_DAYS: ${AM_RETENTION_LOG_DAYS:-14}
+      AM_MAX_AUDIO_MS: ${AM_MAX_AUDIO_MS:-14400000}
+      AM_MAX_UPLOAD_BYTES: ${AM_MAX_UPLOAD_BYTES:-2147483648}
+    volumes:
+      - artifacts:/var/lib/audio-minutes/artifacts
+      - uploads:/var/lib/audio-minutes/uploads
+      - logs:/var/log/audio-minutes
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/health', timeout=3).status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  transcription-worker:
+    <<: *worker-resources
+    image: audio-minutes/transcription-worker:${AM_IMAGE_TAG:-0.1.0}
+    build:
+      context: ..
+      dockerfile: services/transcription-worker/Dockerfile
+    profiles: [cpu]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AM_LOG_LEVEL: ${AM_LOG_LEVEL:-info}
+      AM_LOG_DIR: /var/log/audio-minutes
+      AM_SHARED_GID: "10100"
+      AM_UPDATE_MAINTENANCE_FILE: /var/log/audio-minutes/.update-maintenance
+      AM_WORKER_DATABASE_URL: postgresql://am_worker:${AM_WORKER_DB_PASSWORD}@db:5432/audio_minutes
+      AM_ARTIFACTS_DIR: /var/lib/audio-minutes/artifacts
+      AM_MODELS_DIR: /var/lib/audio-minutes/models
+      HF_HOME: /var/lib/audio-minutes/models
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      AM_MODEL_MIN_FREE_BYTES: ${AM_MODEL_MIN_FREE_BYTES:-8589934592}
+      AM_ENGINE: ${AM_ENGINE:-faster-whisper}
+      AM_BACKEND: cpu
+      AM_STRATEGY: ${AM_STRATEGY:-vad_turbo}
+      AM_THREADS: ${AM_THREADS:-4}
+      AM_MODEL_JA: ${AM_MODEL_JA:-kotoba-tech/kotoba-whisper-v2.0-faster}
+      AM_MODEL_JA_REVISION: ${AM_MODEL_JA_REVISION:-f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc}
+      AM_MODEL_MULTILINGUAL: ${AM_MODEL_MULTILINGUAL:-dropbox-dash/faster-whisper-large-v3-turbo}
+      AM_MODEL_MULTILINGUAL_REVISION: ${AM_MODEL_MULTILINGUAL_REVISION:-0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf}
+      AM_GPU_CPU_FALLBACK: "0"
+      AM_WORKER_ID: ${AM_TRANSCRIPTION_WORKER_ID:-transcription-cpu}
+      AM_LEASE_SECONDS: ${AM_LEASE_SECONDS:-120}
+    volumes:
+      - artifacts:/var/lib/audio-minutes/artifacts
+      - models:/var/lib/audio-minutes/models
+      - logs:/var/log/audio-minutes
+    healthcheck:
+      test: ["CMD", "python", "-m", "transcription_worker.models", "status", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  # GPU 評価・配置用 (GPU 計画 3 節)。krunkit VM の別 Colima profile 上でだけ起動し、cpu profile と同時に起動しない。
+  transcription-worker-vulkan:
+    <<: *worker-resources
+    image: audio-minutes/transcription-worker-vulkan:${AM_IMAGE_TAG:-0.1.0}
+    build:
+      context: ..
+      dockerfile: services/transcription-worker/Dockerfile.vulkan
+      platforms: ["linux/arm64"]
+    profiles: [gpu]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AM_LOG_LEVEL: ${AM_LOG_LEVEL:-info}
+      AM_LOG_DIR: /var/log/audio-minutes
+      AM_SHARED_GID: "10100"
+      AM_UPDATE_MAINTENANCE_FILE: /var/log/audio-minutes/.update-maintenance
+      AM_WORKER_DATABASE_URL: postgresql://am_worker:${AM_WORKER_DB_PASSWORD}@db:5432/audio_minutes
+      AM_ARTIFACTS_DIR: /var/lib/audio-minutes/artifacts
+      AM_MODELS_DIR: /var/lib/audio-minutes/models
+      HF_HOME: /var/lib/audio-minutes/models
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      AM_MODEL_MIN_FREE_BYTES: ${AM_MODEL_MIN_FREE_BYTES:-8589934592}
+      AM_ENGINE: whisper.cpp
+      AM_BACKEND: vulkan
+      AM_STRATEGY: ${AM_STRATEGY:-vad_turbo}
+      AM_THREADS: ${AM_THREADS:-4}
+      AM_MODEL_JA: ${AM_MODEL_JA:-kotoba-tech/kotoba-whisper-v2.0-faster}
+      AM_MODEL_JA_REVISION: ${AM_MODEL_JA_REVISION:-f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc}
+      AM_MODEL_MULTILINGUAL: ${AM_MODEL_MULTILINGUAL:-dropbox-dash/faster-whisper-large-v3-turbo}
+      AM_MODEL_MULTILINGUAL_REVISION: ${AM_MODEL_MULTILINGUAL_REVISION:-0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf}
+      AM_WHISPER_CPP_BIN: /opt/whisper.cpp/build/bin/whisper-cli
+      AM_WHISPER_CPP_MODEL_DIR: /var/lib/audio-minutes/models/ggml
+      AM_GPU_CPU_FALLBACK: ${AM_GPU_CPU_FALLBACK:-0}
+      AM_WORKER_ID: ${AM_TRANSCRIPTION_WORKER_ID:-transcription-vulkan}
+      AM_LEASE_SECONDS: ${AM_LEASE_SECONDS:-120}
+    volumes:
+      - artifacts:/var/lib/audio-minutes/artifacts
+      - models:/var/lib/audio-minutes/models
+      - logs:/var/log/audio-minutes
+    # render device だけを渡す。privileged は使わない (GPU 計画 3 節)
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${AM_RENDER_GID:-video}"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  minutes-worker:
+    image: audio-minutes/minutes-worker:${AM_IMAGE_TAG:-0.1.0}
+    build:
+      context: ..
+      dockerfile: services/minutes-worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AM_LOG_LEVEL: ${AM_LOG_LEVEL:-info}
+      AM_LOG_DIR: /var/log/audio-minutes
+      AM_SHARED_GID: "10100"
+      AM_UPDATE_MAINTENANCE_FILE: /var/log/audio-minutes/.update-maintenance
+      AM_WORKER_DATABASE_URL: postgresql://am_worker:${AM_WORKER_DB_PASSWORD}@db:5432/audio_minutes
+      AM_ARTIFACTS_DIR: /var/lib/audio-minutes/artifacts
+      AM_INTERNAL_TOKEN: ${AM_INTERNAL_TOKEN:?AM_INTERNAL_TOKEN を .env に設定してください}
+      AM_INTERNAL_BIND: 0.0.0.0:8791
+      AM_CLAUDE_BIN: ${AM_CLAUDE_BIN:-claude}
+      AM_CLAUDE_HOME: /var/lib/audio-minutes/claude
+      HOME: /var/lib/audio-minutes/claude
+      AM_CLAUDE_MODEL: ${AM_CLAUDE_MODEL:-}
+      AM_CLAUDE_MOCK: ${AM_CLAUDE_MOCK:-0}
+      AM_WORKER_ID: ${AM_MINUTES_WORKER_ID:-minutes-1}
+      AM_LEASE_SECONDS: ${AM_LEASE_SECONDS:-120}
+    volumes:
+      - artifacts:/var/lib/audio-minutes/artifacts
+      # Claude 資格情報は minutes-worker だけへ mount し、backup 対象から外す
+      - claude-credentials:/var/lib/audio-minutes/claude
+      - logs:/var/log/audio-minutes
+    # 内部制御 API 8791 は expose だけ (Compose ネットワーク内)。ホストへ publish しない
+    expose:
+      - "8791"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+volumes:
+  db-data:
+  artifacts:
+  uploads:
+  models:
+  claude-credentials:
+  logs:

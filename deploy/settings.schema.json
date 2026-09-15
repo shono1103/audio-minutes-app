@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://audio-minutes.dev/schemas/client-settings.v1.schema.json",
+  "title": "audio-minutes クライアント設定 v1",
+  "description": "macOS クライアント (GUI / CLI) の設定。~/Library/Application Support/AudioMinutes/settings.json。トークンや秘密はここに置かず Keychain に保存する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "api_base_url", "profile"],
+  "properties": {
+    "schema_version": { "const": "client-settings/1" },
+    "api_base_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "minutes-api のベース URL。http は 127.0.0.1 / localhost だけ許可し、それ以外は https 必須",
+      "pattern": "^(https://[^/\\s]+|http://(127\\.0\\.0\\.1|localhost)(:[0-9]+)?)/?$"
+    },
+    "deploy_dir": { "type": ["string", "null"], "description": "deploy/ の絶対パス。service コマンドが compose.yml を探す" },
+    "profile": { "enum": ["macos-colima-cpu", "macos-colima-krunkit-vulkan", "linux-cpu"] },
+    "docker_context": { "type": ["string", "null"], "description": "service コマンドが使う Docker context (例: colima)。null なら現在の context" },
+    "colima_profile": { "type": ["string", "null"], "description": "状態表示に使う Colima profile 名。既定は default" },
+    "default_language_mode": { "enum": ["auto", "ja", "en", "mixed"], "default": "auto" },
+    "default_format_profile_id": { "type": ["string", "null"], "format": "uuid" },
+    "last_microphone_uid": { "type": ["string", "null"], "description": "前回選択したマイクの AudioObject UID。利用不能なら既定へ仮切替" },
+    "last_target": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["app", "chrome_tab"] },
+        "bundle_id": { "type": "string" },
+        "tab_title": { "type": ["string", "null"] }
+      },
+      "required": ["kind", "bundle_id"]
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minutes_completed": { "type": "boolean", "default": true },
+        "processing_failed": { "type": "boolean", "default": true }
+      }
+    },
+    "claude_send_default": { "type": "boolean", "default": true, "description": "録音・取り込みシートの既定値。セッションごとに明示選択する" }
+  }
+}

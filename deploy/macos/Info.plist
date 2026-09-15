@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>ja</string>
+  <key>CFBundleExecutable</key><string>AudioMinutesApp</string>
+  <key>CFBundleIdentifier</key><string>dev.audio-minutes.app</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>AudioMinutes</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.2</string>
+  <key>NSMicrophoneUsageDescription</key><string>選択したマイク音声を会議録音へ保存するために使用します。</string>
+  <key>NSAudioCaptureUsageDescription</key><string>選択した会議アプリの音声だけを録音するために使用します。</string>
+</dict>
+</plist>

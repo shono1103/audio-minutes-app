@@ -1,16 +1,48 @@
 {
-  "schema_version": "recording-package/1",
+  "schema_version": "recording-package/2",
   "session_id": "7c9b2b1e-6b6d-4f7a-9d3e-1a2b3c4d5e6f",
   "input_kind": "recorded_dual_track",
-  "time_base": { "unit": "ms", "origin": "recording_start" },
+  "time_base": {
+    "unit": "ms",
+    "origin": "recording_start"
+  },
   "started_at": "2026-09-12T10:00:00+09:00",
   "title": null,
+  "title_edited_by_user": false,
   "language_mode": "auto",
   "allow_external_send": true,
   "format_profile_id": null,
   "tracks": [
-    { "track_id": "app-audio", "role": "app", "start_offset_ms": 0, "container": "wav", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "duration_ms": 1800000, "byte_size": 57600044, "sha256": "0000000000000000000000000000000000000000000000000000000000000001" },
-    { "track_id": "microphone", "role": "microphone", "start_offset_ms": 12, "container": "wav", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "duration_ms": 1799988, "byte_size": 57599660, "sha256": "0000000000000000000000000000000000000000000000000000000000000002" }
+    {
+      "track_id": "app-audio",
+      "role": "app",
+      "start_offset_ms": 0,
+      "container": "wav",
+      "codec": "pcm_s16le",
+      "sample_rate": 16000,
+      "channels": 1,
+      "duration_ms": 1800000,
+      "byte_size": 57600044,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "track_id": "microphone",
+      "role": "microphone",
+      "start_offset_ms": 12,
+      "container": "wav",
+      "codec": "pcm_s16le",
+      "sample_rate": 16000,
+      "channels": 1,
+      "duration_ms": 1799988,
+      "byte_size": 57599660,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000002"
+    }
   ],
-  "source": { "kind": "app", "app_name": "Zoom", "bundle_id": "us.zoom.xos", "tab_host": null, "client": "audio-minutes-gui/0.1.0" }
+  "source": {
+    "kind": "app",
+    "app_name": "Zoom",
+    "bundle_id": "us.zoom.xos",
+    "tab_host": null,
+    "client": "audio-minutes-gui/0.1.0"
+  }
 }

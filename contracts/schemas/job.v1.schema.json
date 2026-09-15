@@ -5,57 +5,420 @@
   "description": "永続ジョブ。API が投入し、worker は claim/heartbeat/complete/fail の限定操作だけを使う。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "job_id", "kind", "session_id", "owner_id", "input", "settings", "idempotency_key", "status", "attempt", "max_attempts", "timeout_seconds", "cancel_requested", "created_at"],
+  "required": [
+    "schema_version",
+    "job_id",
+    "kind",
+    "session_id",
+    "owner_id",
+    "input",
+    "settings",
+    "idempotency_key",
+    "status",
+    "attempt",
+    "max_attempts",
+    "timeout_seconds",
+    "cancel_requested",
+    "created_at"
+  ],
   "properties": {
-    "schema_version": { "const": "job/1" },
-    "job_id": { "type": "string", "format": "uuid" },
-    "kind": { "enum": ["transcription", "minutes_generation"] },
-    "session_id": { "type": "string", "format": "uuid" },
-    "owner_id": { "type": "string", "format": "uuid" },
+    "schema_version": {
+      "const": "job/1"
+    },
+    "job_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "transcription",
+        "minutes_generation"
+      ]
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
     "input": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifacts"],
+      "required": [
+        "artifacts"
+      ],
       "properties": {
         "artifacts": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["artifact_id", "kind"],
+            "required": [
+              "artifact_id",
+              "kind"
+            ],
             "properties": {
-              "artifact_id": { "type": "string" },
-              "kind": { "enum": ["audio_track", "transcript_json", "minutes_md", "format_snapshot"] },
-              "track_id": { "type": ["string", "null"] },
-              "role": { "enum": ["app", "microphone", "mixed", null] },
-              "start_offset_ms": { "type": ["integer", "null"] },
-              "revision": { "type": ["integer", "null"] }
+              "artifact_id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "audio_track",
+                  "transcript_json",
+                  "minutes_md",
+                  "format_snapshot"
+                ]
+              },
+              "track_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "enum": [
+                  "app",
+                  "microphone",
+                  "mixed",
+                  null
+                ]
+              },
+              "start_offset_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "revision": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
             }
           }
         },
-        "transcript_revision": { "type": ["integer", "null"] },
-        "parent_minutes_version_id": { "type": ["string", "null"] }
+        "transcript_revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "parent_minutes_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "settings": {
-      "type": "object",
-      "description": "投入時点の設定スナップショット。transcription は language_mode/strategy/models/backend、minutes は format_snapshot/instructions/title 状態など",
-      "additionalProperties": true
+      "description": "投入時点の設定スナップショット。kind ごとに形が決まる (producer は minutes-api、consumer は各 worker)。pydantic 表現は audio_minutes_contracts.models の TranscriptionJobSettings / MinutesJobSettings。",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/transcription_settings"
+        },
+        {
+          "$ref": "#/$defs/minutes_settings"
+        }
+      ]
     },
-    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "status": { "enum": ["queued", "leased", "running", "succeeded", "failed", "cancelled"] },
-    "attempt": { "type": "integer", "minimum": 0 },
-    "max_attempts": { "type": "integer", "minimum": 1 },
-    "timeout_seconds": { "type": "integer", "minimum": 1 },
-    "cancel_requested": { "type": "boolean" },
-    "lease_owner": { "type": ["string", "null"] },
-    "lease_expires_at": { "type": ["string", "null"], "format": "date-time" },
-    "heartbeat_at": { "type": ["string", "null"], "format": "date-time" },
-    "available_at": { "type": ["string", "null"], "format": "date-time", "description": "backoff 後に再取得できる時刻" },
-    "result": { "oneOf": [ { "type": "null" }, { "$ref": "worker-result.v1.schema.json" } ] },
-    "failure": { "oneOf": [ { "type": "null" }, { "$ref": "error.v1.schema.json#/$defs/job_failure" } ] },
-    "created_at": { "type": "string", "format": "date-time" },
-    "started_at": { "type": ["string", "null"], "format": "date-time" },
-    "finished_at": { "type": ["string", "null"], "format": "date-time" }
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "leased",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cancel_requested": {
+      "type": "boolean"
+    },
+    "lease_owner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lease_expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "heartbeat_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "available_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "backoff 後に再取得できる時刻"
+    },
+    "external_dispatch_started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "minutes-worker が Claude への最初の外部送信直前に永続化する。設定後の lease 切れは自動再送せず outcome=unknown とする"
+    },
+    "result": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "worker-result.v1.schema.json"
+        }
+      ]
+    },
+    "failure": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "error.v1.schema.json#/$defs/job_failure"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "transcription"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "settings": {
+            "$ref": "#/$defs/transcription_settings"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "minutes_generation"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "settings": {
+            "$ref": "#/$defs/minutes_settings"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "transcription_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_kind",
+        "language_mode",
+        "transcript_revision",
+        "max_audio_ms"
+      ],
+      "properties": {
+        "input_kind": {
+          "enum": [
+            "recorded_dual_track",
+            "imported_mixed"
+          ]
+        },
+        "language_mode": {
+          "enum": [
+            "auto",
+            "ja",
+            "en",
+            "mixed"
+          ]
+        },
+        "transcript_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "この実行が作ろうとしている transcript の版。投入の冪等キーとは別 (冪等キーは idempotency_key)"
+        },
+        "max_audio_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requested_backend": {
+          "enum": [
+            "cpu",
+            "vulkan",
+            null
+          ],
+          "description": "null なら worker の profile 設定に従う。実際に使った backend は transcript.processing.backend が正"
+        },
+        "strategy": {
+          "enum": [
+            "vad_turbo",
+            "routed",
+            "whole_retry",
+            "fixed_ja",
+            "fixed_en",
+            "mixed",
+            null
+          ]
+        }
+      }
+    },
+    "minutes_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "allow_external_send",
+        "connected_owner_id",
+        "title",
+        "title_edited_by_user",
+        "input_kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "claude_generated",
+            "claude_regenerated"
+          ]
+        },
+        "allow_external_send": {
+          "type": "boolean",
+          "description": "false なら worker は外部送信せず external_send_forbidden で拒否する"
+        },
+        "connected_owner_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid",
+          "description": "投入時点で Claude に接続していた owner。job.owner_id と一致しなければ worker が拒否する"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "利用者が編集したタイトル。title_edited_by_user が false のときだけ Claude の提案タイトルを採用してよい"
+        },
+        "title_edited_by_user": {
+          "type": "boolean"
+        },
+        "input_kind": {
+          "enum": [
+            "recorded_dual_track",
+            "imported_mixed"
+          ]
+        },
+        "format_snapshot": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "format-profile.v1.schema.json"
+            }
+          ]
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 8000
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "transcript_revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "expected_current_version_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "chunk_chars": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    }
   }
 }

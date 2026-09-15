@@ -1,0 +1,86 @@
+# transcription-worker (whisper.cpp + Vulkan、linux/arm64 向け独自ビルド)。GPU 計画 G2 の対象。
+#   docker build -f services/transcription-worker/Dockerfile.vulkan --platform linux/arm64 -t audio-minutes/transcription-worker-vulkan .
+#
+# 採用する配布元とライセンス (コンテナ内):
+#   - whisper.cpp / ggml: MIT (https://github.com/ggml-org/whisper.cpp)。commit を ARG で固定する。
+#   - Mesa (libvulkan / Venus ICD 相当): Debian bookworm の mesa-vulkan-drivers (MIT)。
+#     公式 whisper.cpp の Vulkan 例は追加配布元の Mesa を使うが、ここでは Debian 公式パッケージだけを採用し、
+#     krunkit/libkrun のゲスト側 Venus ドライバー版との対応は G1 で確認する。
+#   - Vulkan loader / headers: Debian libvulkan1, libvulkan-dev (Apache-2.0)。
+#   - shader compiler: Debian glslc (Apache-2.0)。glslang / glslc がビルドに必要。
+#   - vulkan-tools (vulkaninfo): Apache-2.0。GPU 検出の照合に使う。
+# 未検証事項: bookworm の Mesa 22.x で Venus が有効か、krunkit 側の Vulkan 版との互換性、arm64 での GLSLC 可用性。
+# amd64 エミュレーションで Apple GPU 対応の代わりにしない。ビルドは linux/arm64 で行う。
+
+FROM debian:bookworm-slim AS builder
+
+ARG WHISPER_CPP_REVISION=02612981545f58188a44de99b8a4710793714629
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates cmake git pkg-config \
+        libvulkan-dev glslc glslang-tools libopenblas-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/ggml-org/whisper.cpp.git /opt/whisper.cpp \
+    && git -C /opt/whisper.cpp checkout "${WHISPER_CPP_REVISION}" \
+    && cmake -S /opt/whisper.cpp -B /opt/whisper.cpp/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_NATIVE=OFF \
+        -DGGML_CPU_ARM_ARCH=armv8.6-a+fp16+dotprod+i8mm \
+        -DGGML_VULKAN=ON \
+        -DGGML_BLAS=ON \
+        -DGGML_BLAS_VENDOR=OpenBLAS \
+        -DWHISPER_BUILD_TESTS=OFF \
+        -DWHISPER_BUILD_EXAMPLES=ON \
+    && cmake --build /opt/whisper.cpp/build --config Release -j 4 --target whisper-cli \
+    && strip /opt/whisper.cpp/build/bin/whisper-cli || true
+
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
+
+# 実行時: Vulkan loader、Mesa ICD、vulkaninfo、OpenBLAS、ffmpeg
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg ca-certificates libvulkan1 mesa-vulkan-drivers vulkan-tools libopenblas0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+COPY --from=builder /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper.cpp/build/bin/whisper-cli
+COPY --from=builder /opt/whisper.cpp/build/src/libwhisper*.so* /opt/whisper.cpp/build/src/
+COPY --from=builder /opt/whisper.cpp/build/ggml/src/libggml*.so* /opt/whisper.cpp/build/ggml/src/
+ENV LD_LIBRARY_PATH=/opt/whisper.cpp/build/src:/opt/whisper.cpp/build/ggml/src
+
+WORKDIR /app
+COPY packages/python/audio_minutes_contracts /app/packages/python/audio_minutes_contracts
+COPY contracts/schemas /app/contracts/schemas
+COPY services/transcription-worker/pyproject.toml services/transcription-worker/README.md /app/services/transcription-worker/
+COPY services/transcription-worker/uv.lock /app/services/transcription-worker/uv.lock
+COPY services/transcription-worker/src /app/services/transcription-worker/src
+COPY deploy/container-log-runner.py /usr/local/bin/audio-minutes-log-runner.py
+WORKDIR /app/services/transcription-worker
+RUN uv sync --frozen --no-dev
+
+# render device (/dev/dri/renderD128) へアクセスするため render グループを使う。privileged は使わない。
+# 共有 volume の所有者・mode は CPU イメージと同一にする (どちらが先に初期化しても同じ結果にする)。
+RUN groupadd --system --gid 10100 am-shared \
+    && groupadd --system --gid 10001 worker \
+    && (getent group render >/dev/null || groupadd --system render) \
+    && useradd --system --uid 10001 --gid worker --groups render,am-shared --home /nonexistent --shell /usr/sbin/nologin worker \
+    && mkdir -p /var/lib/audio-minutes/artifacts /var/lib/audio-minutes/models/ggml /var/log/audio-minutes \
+    && chown root:am-shared /var/lib/audio-minutes/artifacts /var/lib/audio-minutes/models /var/log/audio-minutes \
+    && chown worker:am-shared /var/lib/audio-minutes/models/ggml \
+    && chmod 2775 /var/lib/audio-minutes/artifacts /var/lib/audio-minutes/models /var/lib/audio-minutes/models/ggml /var/log/audio-minutes
+
+ENV PATH="/app/services/transcription-worker/.venv/bin:${PATH}" \
+    AM_ENGINE=whisper.cpp \
+    AM_BACKEND=vulkan \
+    AM_WHISPER_CPP_BIN=/opt/whisper.cpp/build/bin/whisper-cli \
+    AM_WHISPER_CPP_MODEL_DIR=/var/lib/audio-minutes/models/ggml \
+    AM_MODELS_DIR=/var/lib/audio-minutes/models \
+    AM_ARTIFACTS_DIR=/var/lib/audio-minutes/artifacts \
+    AM_GPU_CPU_FALLBACK=0
+
+USER worker
+ENTRYPOINT ["python", "/usr/local/bin/audio-minutes-log-runner.py", "--service", "transcription-worker-vulkan", "--", "python", "-m", "transcription_worker"]

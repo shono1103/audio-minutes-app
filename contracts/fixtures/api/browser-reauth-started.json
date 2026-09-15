@@ -1,0 +1,7 @@
+{
+  "request_id": "5f52d89f-2f16-4a18-98f2-7fc6dff0f815",
+  "status": "pending",
+  "expires_at": "2026-09-14T02:30:00Z",
+  "reauth_valid_until": null,
+  "reauth_url": "http://localhost:8787/auth/reauth/one-time-browser-token"
+}

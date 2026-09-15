@@ -8,14 +8,33 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterator, Protocol
+from typing import BinaryIO, Protocol, Self
 
 from audio_minutes_contracts.ids import is_artifact_id, new_artifact_id
 
 _CHUNK = 1024 * 1024
+
+# 共有 volume は API と 2 つの worker が別 UID・同一補助 GID (am-shared) で使う。
+# umask に依存すると 0755/0644 になり、別 UID から成果物や tmp を消せなくなるため、
+# ディレクトリは setgid + group 書き込み、ファイルは group 書き込みを明示的に付ける。
+DIR_MODE = 0o2775
+FILE_MODE = 0o0660
+
+
+def _ensure_dir(path: Path) -> None:
+    """ディレクトリを作り、共有 mode を明示的に設定する。
+
+    別 UID が先に作っていた場合 chmod は失敗するが、その UID が同じ規則で作っている
+    限り mode は既に正しい。権限エラーは無視して読み書きの可否だけを結果に委ねる。
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path, DIR_MODE)
+    except PermissionError:  # 別 UID の所有。mode は作成側が揃えている前提
+        pass
 
 
 @dataclass(frozen=True)
@@ -26,7 +45,7 @@ class StoredArtifact:
 
 
 class ArtifactStore(Protocol):
-    def begin(self) -> "PendingArtifact": ...
+    def begin(self) -> PendingArtifact: ...
 
     def open(self, artifact_id: str) -> BinaryIO: ...
 
@@ -42,12 +61,13 @@ class ArtifactStore(Protocol):
 class PendingArtifact:
     """書き込み中の一時 artifact。commit で不変 ID として公開、abort で破棄。"""
 
-    def __init__(self, store: "LocalArtifactStore", artifact_id: str) -> None:
+    def __init__(self, store: LocalArtifactStore, artifact_id: str) -> None:
         self._store = store
         self.artifact_id = artifact_id
         self.temp_path = store.root / "tmp" / f"{artifact_id}.part"
-        self.temp_path.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(self.temp_path.parent)
         self._handle: BinaryIO | None = self.temp_path.open("wb")
+        os.fchmod(self._handle.fileno(), FILE_MODE)
         self._hasher = hashlib.sha256()
         self._size = 0
 
@@ -77,7 +97,7 @@ class PendingArtifact:
             self.temp_path.unlink(missing_ok=True)
             raise ChecksumMismatch(self.artifact_id, expected_sha256, digest)
         final_path = self._store.path(self.artifact_id)
-        final_path.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(final_path.parent)
         os.replace(self.temp_path, final_path)
         return StoredArtifact(self.artifact_id, self._size, digest)
 
@@ -87,7 +107,7 @@ class PendingArtifact:
             self._handle = None
         self.temp_path.unlink(missing_ok=True)
 
-    def __enter__(self) -> "PendingArtifact":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -106,7 +126,7 @@ class ChecksumMismatch(ValueError):
 class LocalArtifactStore:
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(self.root)
 
     def begin(self, artifact_id: str | None = None) -> PendingArtifact:
         return PendingArtifact(self, artifact_id or new_artifact_id())

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Protocol, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
 
 import psycopg
 from psycopg.rows import dict_row
@@ -41,6 +42,8 @@ class JobQueue(Protocol):
 
     def mark_running(self, job: ClaimedJob, worker_id: str) -> bool: ...
 
+    def mark_external_dispatch_started(self, job: ClaimedJob, worker_id: str) -> bool: ...
+
     def complete(self, job: ClaimedJob, worker_id: str, result: WorkerResult) -> bool: ...
 
     def fail(self, job: ClaimedJob, worker_id: str, failure: JobFailure, backoff_seconds: int = 0) -> bool: ...
@@ -51,7 +54,7 @@ class JobQueue(Protocol):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class PostgresJobQueue:
@@ -67,6 +70,80 @@ class PostgresJobQueue:
     def claim(self, kinds: Sequence[str], worker_id: str, lease_seconds: int) -> ClaimedJob | None:
         """queued、または lease 切れの leased/running を 1 件取得して lease する。"""
         with self._connect() as conn, conn.transaction():
+            cancelled = conn.execute(
+                """
+                SELECT job_id, kind, attempt, revision, external_dispatch_started_at
+                  FROM jobs
+                 WHERE kind = ANY(%(kinds)s)
+                   AND cancel_requested = true
+                   AND (
+                        status = 'queued'
+                        OR (status IN ('leased', 'running') AND lease_expires_at < now())
+                   )
+                 ORDER BY created_at
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+                """,
+                {"kinds": list(kinds)},
+            ).fetchone()
+            if cancelled is not None:
+                # worker が取消を観測する前に落ちても、lease 切れ後は行ロックと
+                # attempt/revision の fence を取った別 worker が terminal 化する。
+                # Claude 送信開始済みだけは取消と断定せず outcome=unknown にする。
+                dispatched = (
+                    cancelled["kind"] == JobKind.MINUTES_GENERATION.value
+                    and cancelled["external_dispatch_started_at"] is not None
+                )
+                result = (
+                    Jsonb(
+                        {
+                            "schema_version": "worker-result/1",
+                            "kind": JobKind.MINUTES_GENERATION.value,
+                            "outcome": "unknown",
+                            "artifacts": [],
+                            "insufficient_information": [],
+                        }
+                    )
+                    if dispatched
+                    else None
+                )
+                status = "succeeded" if dispatched else "cancelled"
+                updated = conn.execute(
+                    """
+                    UPDATE jobs
+                       SET status = %(status)s, result = %(result)s, finished_at = now(),
+                           lease_owner = NULL, lease_expires_at = NULL, revision = revision + 1
+                     WHERE job_id = %(job_id)s
+                       AND attempt = %(attempt)s
+                       AND revision = %(revision)s
+                       AND cancel_requested = true
+                       AND (
+                            status = 'queued'
+                            OR (status IN ('leased', 'running') AND lease_expires_at < now())
+                       )
+                    """,
+                    {
+                        "job_id": cancelled["job_id"],
+                        "attempt": cancelled["attempt"],
+                        "revision": cancelled["revision"],
+                        "status": status,
+                        "result": result,
+                    },
+                )
+                if updated.rowcount == 1:
+                    event = "external_outcome_unknown" if dispatched else "cancelled"
+                    reason = "cancel_requested_lease_expired_after_dispatch" if dispatched else "cancel_requested_lease_expired"
+                    conn.execute(
+                        "INSERT INTO job_events (job_id, attempt, worker_id, event, detail) VALUES (%s, %s, %s, %s, %s)",
+                        (
+                            cancelled["job_id"],
+                            cancelled["attempt"],
+                            worker_id,
+                            event,
+                            Jsonb({"reason": reason}),
+                        ),
+                    )
+                return None
             row = conn.execute(
                 """
                 SELECT job_id FROM jobs
@@ -86,7 +163,42 @@ class PostgresJobQueue:
             if row is None:
                 return None
             job_id = row["job_id"]
-            current = conn.execute("SELECT attempt, max_attempts, status FROM jobs WHERE job_id = %s", (job_id,)).fetchone()
+            current = conn.execute(
+                "SELECT attempt, max_attempts, status, kind, external_dispatch_started_at FROM jobs WHERE job_id = %s",
+                (job_id,),
+            ).fetchone()
+            if (
+                current["kind"] == JobKind.MINUTES_GENERATION.value
+                and current["status"] in ("queued", "leased", "running")
+                and current["external_dispatch_started_at"] is not None
+            ):
+                # Claude は idempotency key を受け取らない。送信開始後に worker が落ちた
+                # job を再取得すると、同じ文字起こしを無条件に二重送信してしまう。
+                # 成果物の有無を断定せず unknown として terminal にし、利用者の明示操作を待つ。
+                conn.execute(
+                    """
+                    UPDATE jobs SET status = 'succeeded', revision = revision + 1, finished_at = now(),
+                        result = %(result)s, lease_owner = NULL, lease_expires_at = NULL
+                    WHERE job_id = %(job_id)s
+                    """,
+                    {
+                        "job_id": job_id,
+                        "result": Jsonb(
+                            {
+                                "schema_version": "worker-result/1",
+                                "kind": JobKind.MINUTES_GENERATION.value,
+                                "outcome": "unknown",
+                                "artifacts": [],
+                                "insufficient_information": [],
+                            }
+                        ),
+                    },
+                )
+                conn.execute(
+                    "INSERT INTO job_events (job_id, attempt, worker_id, event, detail) VALUES (%s, %s, %s, 'external_outcome_unknown', %s)",
+                    (job_id, current["attempt"], worker_id, Jsonb({"reason": "lease_expired_after_dispatch"})),
+                )
+                return None
             if current["status"] in ("leased", "running") and current["attempt"] >= current["max_attempts"]:
                 # lease 切れで再取得したが attempt 上限。失敗として確定する
                 conn.execute(
@@ -100,7 +212,11 @@ class PostgresJobQueue:
                         "failure": Jsonb(
                             {
                                 "code": "timeout",
-                                "stage": "transcription" if current else "storage",
+                                "stage": (
+                                    "transcription"
+                                    if current["kind"] == JobKind.TRANSCRIPTION.value
+                                    else "minutes"
+                                ),
                                 "retryable": False,
                                 "message": "lease が切れ attempt 上限に達しました",
                                 "retained_artifacts": [],
@@ -143,15 +259,25 @@ class PostgresJobQueue:
                 revision=updated["revision"],
             )
 
-    def _guarded_update(self, job: ClaimedJob, worker_id: str, set_sql: str, params: dict[str, Any]) -> int:
-        """attempt・lease_owner が一致する行だけ更新する。0 なら lease を失っている。"""
+    def _guarded_update(
+        self,
+        job: ClaimedJob,
+        worker_id: str,
+        set_sql: str,
+        params: dict[str, Any],
+        *,
+        reject_cancel_requested: bool = False,
+    ) -> int:
+        """attempt・lease_owner（必要なら未取消）が一致する行だけ更新する。"""
         params = {**params, "job_id": job.job_id, "attempt": job.attempt, "worker": worker_id}
+        cancel_guard = "AND cancel_requested = false" if reject_cancel_requested else ""
         with self._connect() as conn, conn.transaction():
             result = conn.execute(
                 f"""
                 UPDATE jobs SET {set_sql}, revision = revision + 1
                 WHERE job_id = %(job_id)s AND attempt = %(attempt)s AND lease_owner = %(worker)s
                   AND status IN ('leased', 'running')
+                  {cancel_guard}
                 """,
                 params,
             )
@@ -163,7 +289,30 @@ class PostgresJobQueue:
             return result.rowcount
 
     def mark_running(self, job: ClaimedJob, worker_id: str) -> bool:
-        return self._guarded_update(job, worker_id, "status = 'running', heartbeat_at = now()", {}) == 1
+        return (
+            self._guarded_update(
+                job,
+                worker_id,
+                "status = 'running', heartbeat_at = now()",
+                {},
+                reject_cancel_requested=True,
+            )
+            == 1
+        )
+
+    def mark_external_dispatch_started(self, job: ClaimedJob, worker_id: str) -> bool:
+        """現在の認可状態と lease を DB 内で原子的に検査して送信開始を記録する。
+
+        SECURITY DEFINER 関数だけに業務テーブルの参照を閉じ込める。false の場合は
+        lease 喪失か、現在状態の無効化によって job が cancelled になっている。
+        """
+        with self._connect() as conn, conn.transaction():
+            return bool(
+                conn.execute(
+                    "SELECT authorize_minutes_dispatch(%s, %s, %s)",
+                    (job.job_id, job.attempt, worker_id),
+                ).fetchone()["authorize_minutes_dispatch"]
+            )
 
     def heartbeat(self, job: ClaimedJob, worker_id: str, lease_seconds: int) -> bool:
         return (
@@ -183,6 +332,7 @@ class PostgresJobQueue:
                 worker_id,
                 "status = 'succeeded', result = %(result)s, finished_at = now(), lease_owner = NULL, lease_expires_at = NULL",
                 {"result": Jsonb(json.loads(result.model_dump_json()))},
+                reject_cancel_requested=True,
             )
             == 1
         )
@@ -193,7 +343,13 @@ class PostgresJobQueue:
     def fail(self, job: ClaimedJob, worker_id: str, failure: JobFailure, backoff_seconds: int = 0) -> bool:
         retry = failure.retryable and job.attempt < job.max_attempts
         set_sql = (
-            "status = 'queued', failure = %(failure)s, lease_owner = NULL, lease_expires_at = NULL, "
+            # minutes は送信開始後なら retryable な局所エラーでも自動再送しない。
+            # preflight 失敗時は marker が NULL なので従来どおり backoff 再試行できる。
+            "status = CASE WHEN kind = 'minutes_generation' AND external_dispatch_started_at IS NOT NULL "
+            "              THEN 'failed' ELSE 'queued' END, "
+            "failure = %(failure)s, lease_owner = NULL, lease_expires_at = NULL, "
+            "finished_at = CASE WHEN kind = 'minutes_generation' AND external_dispatch_started_at IS NOT NULL "
+            "                   THEN now() ELSE finished_at END, "
             "available_at = now() + make_interval(secs => %(backoff)s)"
             if retry
             else "status = 'failed', failure = %(failure)s, finished_at = now(), lease_owner = NULL, lease_expires_at = NULL"
@@ -204,6 +360,7 @@ class PostgresJobQueue:
                 worker_id,
                 set_sql,
                 {"failure": Jsonb(json.loads(failure.model_dump_json())), "backoff": backoff_seconds},
+                reject_cancel_requested=True,
             )
             == 1
         )

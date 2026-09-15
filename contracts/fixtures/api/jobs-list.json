@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "job_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+      "kind": "transcription",
+      "status": "succeeded",
+      "attempt": 1,
+      "max_attempts": 3,
+      "cancel_requested": false,
+      "failure": null,
+      "created_at": "2026-09-12T10:31:00+09:00",
+      "started_at": "2026-09-12T10:31:05+09:00",
+      "finished_at": "2026-09-12T10:39:00+09:00"
+    },
+    {
+      "job_id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+      "kind": "minutes_generation",
+      "status": "failed",
+      "attempt": 2,
+      "max_attempts": 3,
+      "cancel_requested": false,
+      "failure": {
+        "code": "claude_rate_limited",
+        "stage": "minutes",
+        "retryable": true,
+        "message": "Claude の利用上限に到達しています",
+        "exit_code": null,
+        "retained_artifacts": [],
+        "diagnostics": null
+      },
+      "created_at": "2026-09-12T10:45:00+09:00",
+      "started_at": "2026-09-12T10:45:10+09:00",
+      "finished_at": "2026-09-12T10:46:00+09:00"
+    }
+  ]
+}

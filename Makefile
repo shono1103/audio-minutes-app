@@ -17,7 +17,7 @@ test-minutes:
 test-swift:
 	swift test --package-path packages/swift
 	swift build --package-path apps/cli
-	swift build --package-path apps/macos
+	swift test --package-path apps/macos
 
 test-extension:
 	cd extensions/chrome && npm test && npm run build

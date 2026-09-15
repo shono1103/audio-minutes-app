@@ -1,0 +1,55 @@
+{
+  "items": [
+    {
+      "schema_version": "format-profile/1",
+      "profile_id": "00000000-0000-4000-8000-000000000001",
+      "owner_id": null,
+      "version": 1,
+      "name": "標準",
+      "output_language": "ja",
+      "builtin": true,
+      "is_default": true,
+      "sections": [
+        {
+          "key": "summary",
+          "title": "要約",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "decisions",
+          "title": "決定事項",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "action_items",
+          "title": "アクションアイテム",
+          "enabled": true,
+          "instructions": "担当者・期限は発言にある場合だけ記載する"
+        },
+        {
+          "key": "open_questions",
+          "title": "未決事項・確認事項",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "topics",
+          "title": "主な議題と議論",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "transcript_references",
+          "title": "文字起こしへの参照",
+          "enabled": true,
+          "instructions": null
+        }
+      ],
+      "additional_instructions": "",
+      "template_markdown": "# {{title}}\n\n- 開始: {{started_at}}\n- 録音時間: {{duration}}\n\n{{section:summary}}\n\n{{section:decisions}}\n\n{{section:action_items}}\n\n{{section:open_questions}}\n\n{{section:topics}}\n\n{{section:transcript_references}}\n",
+      "updated_at": null
+    }
+  ]
+}

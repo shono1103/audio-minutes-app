@@ -1,0 +1,22 @@
+# Linux リモート配置 (将来) の TLS 入口例。minutes-api だけを公開し、DB・worker・8791 は公開しない。
+# 証明書は Caddy の自動取得 (ACME) か内部 CA を使う。証明書検証を無効化する設定は置かない。
+minutes.example.internal {
+    encode zstd gzip
+    request_body {
+        max_size 2200MB
+    }
+    reverse_proxy 127.0.0.1:8787 {
+        header_up X-Forwarded-Proto {scheme}
+        # tus PATCH の長い転送を許容する
+        transport http {
+            read_timeout 30m
+            write_timeout 30m
+        }
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        -Server
+    }
+}

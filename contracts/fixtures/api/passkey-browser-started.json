@@ -1,0 +1,6 @@
+{
+  "request_id": "7eb0c97a-53a7-44d9-aa12-a1f1adf443d7",
+  "status": "pending",
+  "expires_at": "2026-09-14T02:30:00Z",
+  "passkey_url": "http://localhost:8787/auth/account/passkeys/one-time-browser-token"
+}

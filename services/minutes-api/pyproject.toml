@@ -1,0 +1,51 @@
+[project]
+name = "minutes-api"
+version = "0.1.0"
+description = "audio-minutes の HTTP API: 認証認可・セッション・tus upload・ジョブ制御・成果物・議事録版管理"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "MIT" }
+dependencies = [
+  "audio-minutes-contracts",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "sqlalchemy>=2.0.35,<3",
+  "alembic>=1.13,<2",
+  "psycopg[binary]>=3.2,<4",
+  "argon2-cffi>=23.1,<26",
+  "webauthn>=2.2,<3",
+  "jinja2>=3.1,<4",
+  "python-multipart>=0.0.9",
+  "httpx>=0.27,<1",
+  "pydantic>=2.9,<3",
+]
+
+[project.scripts]
+minutes-api = "minutes_api.app:main"
+minutes-api-admin = "minutes_api.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.6"]
+
+[tool.uv.sources]
+audio-minutes-contracts = { path = "../../packages/python/audio_minutes_contracts", editable = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minutes_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["integration: Docker の PostgreSQL を使う統合試験"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["B008", "E501"]

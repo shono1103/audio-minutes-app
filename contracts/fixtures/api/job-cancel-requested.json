@@ -1,0 +1,12 @@
+{
+  "job_id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+  "kind": "minutes_generation",
+  "status": "running",
+  "attempt": 1,
+  "max_attempts": 3,
+  "cancel_requested": true,
+  "failure": null,
+  "created_at": "2026-09-12T10:45:00+09:00",
+  "started_at": "2026-09-12T10:45:10+09:00",
+  "finished_at": null
+}

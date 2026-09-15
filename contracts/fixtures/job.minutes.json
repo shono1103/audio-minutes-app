@@ -1,0 +1,102 @@
+{
+  "schema_version": "job/1",
+  "job_id": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+  "kind": "minutes_generation",
+  "session_id": "7c9b2b1e-6b6d-4f7a-9d3e-1a2b3c4d5e6f",
+  "owner_id": "11111111-1111-4111-8111-111111111111",
+  "input": {
+    "artifacts": [
+      {
+        "artifact_id": "art_01J7Q0AAAAAAAAAAAAAAAAAAB1",
+        "kind": "transcript_json",
+        "track_id": null,
+        "role": null,
+        "start_offset_ms": null,
+        "revision": 1
+      }
+    ],
+    "transcript_revision": 1,
+    "parent_minutes_version_id": null
+  },
+  "settings": {
+    "kind": "claude_generated",
+    "allow_external_send": true,
+    "connected_owner_id": "11111111-1111-4111-8111-111111111111",
+    "title": "週次定例 2026-09-12 10:00",
+    "title_edited_by_user": false,
+    "input_kind": "recorded_dual_track",
+    "format_snapshot": {
+      "schema_version": "format-profile/1",
+      "profile_id": "00000000-0000-4000-8000-000000000001",
+      "owner_id": null,
+      "version": 1,
+      "name": "標準",
+      "output_language": "ja",
+      "builtin": true,
+      "is_default": true,
+      "sections": [
+        {
+          "key": "summary",
+          "title": "要約",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "decisions",
+          "title": "決定事項",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "action_items",
+          "title": "アクションアイテム",
+          "enabled": true,
+          "instructions": "担当者・期限は発言にある場合だけ記載する"
+        },
+        {
+          "key": "open_questions",
+          "title": "未決事項・確認事項",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "topics",
+          "title": "主な議題と議論",
+          "enabled": true,
+          "instructions": null
+        },
+        {
+          "key": "transcript_references",
+          "title": "文字起こしへの参照",
+          "enabled": true,
+          "instructions": null
+        }
+      ],
+      "additional_instructions": "",
+      "template_markdown": "# {{title}}\n\n- 開始: {{started_at}}\n- 録音時間: {{duration}}\n\n{{section:summary}}\n\n{{section:decisions}}\n\n{{section:action_items}}\n\n{{section:open_questions}}\n\n{{section:topics}}\n\n{{section:transcript_references}}\n",
+      "updated_at": null
+    },
+    "instructions": null,
+    "started_at": "2026-09-12T10:00:00+09:00",
+    "duration_ms": 1800000,
+    "transcript_revision": 1,
+    "expected_current_version_id": null,
+    "chunk_chars": null
+  },
+  "idempotency_key": "minutes:7c9b2b1e-6b6d-4f7a-9d3e-1a2b3c4d5e6f:gen:1",
+  "status": "queued",
+  "attempt": 0,
+  "max_attempts": 3,
+  "timeout_seconds": 2700,
+  "cancel_requested": false,
+  "lease_owner": null,
+  "lease_expires_at": null,
+  "heartbeat_at": null,
+  "available_at": "2026-09-12T10:45:00+09:00",
+  "external_dispatch_started_at": null,
+  "result": null,
+  "failure": null,
+  "created_at": "2026-09-12T10:45:00+09:00",
+  "started_at": null,
+  "finished_at": null
+}

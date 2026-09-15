@@ -1,0 +1,32 @@
+{
+  "input_kind": "recorded_dual_track",
+  "tracks": [
+    {
+      "track_id": "app-audio",
+      "role": "app",
+      "file": "dual-app.wav",
+      "start_offset_ms": 0,
+      "duration_ms": 4000,
+      "sample_rate": 16000,
+      "channels": 1,
+      "codec": "pcm_s16le",
+      "container": "wav",
+      "byte_size": 128044,
+      "sha256": "4437c9c83cf98b534c43610dae3c70b11be2714ab0297ecfb4b1ab243bf342da"
+    },
+    {
+      "track_id": "microphone",
+      "role": "microphone",
+      "file": "dual-mic.wav",
+      "start_offset_ms": 12,
+      "duration_ms": 3988,
+      "sample_rate": 16000,
+      "channels": 1,
+      "codec": "pcm_s16le",
+      "container": "wav",
+      "byte_size": 127660,
+      "sha256": "b1407e5f9fc404789f3a0b29bd2c19d831334168b62bc17762982beed691398e"
+    }
+  ],
+  "note": "合成音声。app は 500-2000 ms に 330 Hz、mic は共通時刻 2500-3500 ms に 660 Hz"
+}

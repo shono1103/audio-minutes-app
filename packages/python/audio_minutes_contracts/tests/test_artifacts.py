@@ -33,10 +33,9 @@ def test_checksum_mismatch_discards_temp(tmp_path: Path) -> None:
 def test_abort_on_exception(tmp_path: Path) -> None:
     store = LocalArtifactStore(tmp_path)
     artifact_id = new_artifact_id()
-    with pytest.raises(RuntimeError):
-        with store.begin(artifact_id) as pending:
-            pending.write(b"x")
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError), store.begin(artifact_id) as pending:
+        pending.write(b"x")
+        raise RuntimeError("boom")
     assert not store.exists(artifact_id)
 
 

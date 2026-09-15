@@ -1,0 +1,49 @@
+{
+  "version": "0.1.0",
+  "contracts": {
+    "recording-package": 2,
+    "job": 1,
+    "worker-result": 1,
+    "transcript": 1,
+    "minutes-version": 1,
+    "format-profile": 1,
+    "session": 1,
+    "error": 1
+  },
+  "database": "ok",
+  "workers": [
+    {
+      "worker_id": "transcription-cpu",
+      "kind": "transcription",
+      "version": "0.1.0",
+      "alive": true,
+      "heartbeat_at": "2026-09-12T11:00:00+09:00",
+      "backend": {
+        "requested_backend": "cpu"
+      },
+      "models": [],
+      "claude_state": null
+    },
+    {
+      "worker_id": "minutes-1",
+      "kind": "minutes",
+      "version": "0.1.0",
+      "alive": true,
+      "heartbeat_at": "2026-09-12T11:00:00+09:00",
+      "backend": null,
+      "models": null,
+      "claude_state": "logged_in"
+    }
+  ],
+  "transcription_available": true,
+  "minutes_available": true,
+  "claude": {
+    "state": "logged_in",
+    "connected_owner_is_me": true
+  },
+  "limits": {
+    "max_audio_ms": 14400000,
+    "max_upload_bytes": 2147483648
+  },
+  "poll_interval_ms": 3000
+}

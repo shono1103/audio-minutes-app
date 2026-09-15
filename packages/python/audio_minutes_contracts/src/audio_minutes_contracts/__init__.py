@@ -15,6 +15,7 @@ from audio_minutes_contracts.models import (
     JobKind,
     JobStatus,
     LanguageMode,
+    MinutesJobSettings,
     MinutesVersion,
     Processing,
     ProcessingModel,
@@ -31,10 +32,12 @@ from audio_minutes_contracts.models import (
     Strategy,
     Timings,
     Transcript,
+    TranscriptionJobSettings,
     TranscriptTrack,
     WorkerResult,
     WorkerResultArtifact,
 )
+from audio_minutes_contracts.schemas import SCHEMA_VERSIONS as _SCHEMA_VERSIONS
 
 __all__ = [
     "ApiError",
@@ -51,6 +54,7 @@ __all__ = [
     "JobKind",
     "JobStatus",
     "LanguageMode",
+    "MinutesJobSettings",
     "MinutesVersion",
     "Processing",
     "ProcessingModel",
@@ -68,17 +72,10 @@ __all__ = [
     "Timings",
     "Transcript",
     "TranscriptTrack",
+    "TranscriptionJobSettings",
     "WorkerResult",
     "WorkerResultArtifact",
 ]
 
-CONTRACT_VERSIONS = {
-    "recording-package": 1,
-    "job": 1,
-    "worker-result": 1,
-    "transcript": 1,
-    "minutes-version": 1,
-    "format-profile": 1,
-    "session": 1,
-    "error": 1,
-}
+# 契約の現行版は schemas.SCHEMA_VERSIONS が正。二重管理しない。
+CONTRACT_VERSIONS = dict(_SCHEMA_VERSIONS)

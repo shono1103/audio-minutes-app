@@ -1,6 +1,6 @@
 # Claude 認証制御契約 (minutes-api → minutes-worker、内部ネットワーク限定)
 
-Claude の認証 URL は DB・キュー・ログ・トレースへ書かない。minutes-worker がプロセス内メモリに短命保持し、
+Claude の認証 URL・認可codeは DB・キュー・ログ・トレースへ書かない。minutes-worker がURLだけをプロセス内メモリに短命保持し、
 minutes-api が要求 owner へ中継する。状態 ID だけを DB に永続化し、worker 再起動で認証待ちは失効する。
 
 * ベース: `http://minutes-worker:8791` (Compose 内部ネットワークのみ。ホストへ publish しない)
@@ -11,7 +11,8 @@ minutes-api が要求 owner へ中継する。状態 ID だけを DB に永続�
 | --- | --- |
 | `GET /internal/v1/claude/status` | `{state, cli_version, cli_supported, checked_at, conflict_env_vars: [名前のみ], detail?}` |
 | `POST /internal/v1/claude/login` | 201 `{auth_session_id, expires_at}` |
-| `GET /internal/v1/claude/login/{id}` | `{state, url?, expires_at}`。`url` は `url_ready` の間だけ返す |
+| `GET /internal/v1/claude/login/{id}` | `{state, url?, expires_at, failure_code?}`。`url` は `url_ready` の間だけ、`failure_code` は安全な分類のみ |
+| `POST /internal/v1/claude/login/{id}/code` | body=`{code}`、`{auth_session_id, state}`。PTYへ一度だけ渡し、保持・log出力しない |
 | `POST /internal/v1/claude/login/{id}/cancel` | 200 `{state: cancelled}` |
 | `POST /internal/v1/claude/logout` | 200 `{state}` |
 | `GET /internal/v1/health` | `{status, worker: "minutes-worker", version}` |

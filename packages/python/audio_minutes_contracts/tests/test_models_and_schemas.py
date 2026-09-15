@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from audio_minutes_contracts import models, schemas
 
@@ -44,7 +45,7 @@ def test_schema_rejects_pid_or_path_fields() -> None:
     document = json.loads((FIXTURES / "recording-package.dual-track.json").read_text())
     document["source"]["pid"] = 1234
     assert schemas.errors("recording-package", document)
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         models.RecordingPackage.model_validate(document)
 
 

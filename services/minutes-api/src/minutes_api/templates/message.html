@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="notice">{{ message }}</p>
+{% if link %}<p><a href="{{ link }}">{{ link_label or '続ける' }}</a></p>{% endif %}
+{% endblock %}

@@ -1,0 +1,80 @@
+{
+  "_comment": "Claude Code CLI の対応表。ここに無い版では推測した認証・生成フローを実行しない (FR-132)。2026-09-12 にホストの 2.1.268 で実出力を確認した。",
+  "supported_versions": ["2.1.268"],
+  "version_args": ["--version"],
+  "version_pattern": "^(\\d+\\.\\d+\\.\\d+)",
+  "auth": {
+    "status_args": ["auth", "status", "--json"],
+    "status_keys": {
+      "logged_in": "loggedIn",
+      "auth_method": "authMethod",
+      "api_provider": "apiProvider",
+      "subscription_type": "subscriptionType"
+    },
+    "status_keys_never_surfaced": ["email", "orgId", "orgName", "configDirectory", "projectsDirectory"],
+    "expected_auth_method": "claude.ai",
+    "logged_out_auth_method": "none",
+    "expected_api_provider": "firstParty",
+    "login_args": ["auth", "login", "--claudeai"],
+    "logout_args": ["auth", "logout"],
+    "url_presentation": "login コマンドが標準出力へ https URL を含む行を出す。URL は 1 行内に収まる",
+    "url_allowlist_origins": ["https://claude.ai/", "https://console.anthropic.com/", "https://platform.claude.com/"],
+    "login_accepts_code_on_stdin": true
+  },
+  "generate": {
+    "base_args": [
+      "-p",
+      "--output-format", "json",
+      "--tools", "",
+      "--strict-mcp-config",
+      "--mcp-config", "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--setting-sources", "",
+      "--no-session-persistence",
+      "--max-turns", "1",
+      "--permission-mode", "dontAsk"
+    ],
+    "system_prompt_flag": "--system-prompt",
+    "json_schema_flag": "--json-schema",
+    "model_flag": "--model",
+    "prompt_via": "stdin",
+    "result_keys": {
+      "type": "type",
+      "is_error": "is_error",
+      "result_text": "result",
+      "structured_output": "structured_output",
+      "terminal_reason": "terminal_reason",
+      "api_error_status": "api_error_status",
+      "usage": "usage",
+      "model_usage": "modelUsage"
+    },
+    "not_logged_in_markers": ["Not logged in", "Please run /login", "Invalid API key"],
+    "rate_limit_markers": ["rate limit", "Rate limit", "usage limit", "Usage limit", "overloaded"],
+    "rate_limit_statuses": [429, 529],
+    "notes": [
+      "--mcp-config '{}' は 'Invalid MCP configuration: mcpServers: Invalid input' で拒否される。{\"mcpServers\":{}} を使う",
+      "未認証時は exit 1、stdout に type=result is_error=true result='Not logged in · Please run /login' の JSON を返す",
+      "--bare は OAuth を読まないため subscription profile では使わない"
+    ]
+  },
+  "environment_allowlist": ["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL"],
+  "environment_forced": {
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "conflict_environment_variables": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "ANTHROPIC_BEDROCK_BASE_URL",
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "ANTHROPIC_FOUNDRY_RESOURCE",
+    "ANTHROPIC_FOUNDRY_API_KEY"
+  ]
+}

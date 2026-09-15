@@ -1,0 +1,1 @@
+../.claude/skills/install/scripts/inspect-host.sh

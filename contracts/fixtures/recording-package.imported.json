@@ -1,15 +1,37 @@
 {
-  "schema_version": "recording-package/1",
+  "schema_version": "recording-package/2",
   "session_id": "3f1d2c4b-5a6e-4d7f-8091-a2b3c4d5e6f7",
   "input_kind": "imported_mixed",
-  "time_base": { "unit": "ms", "origin": "recording_start" },
+  "time_base": {
+    "unit": "ms",
+    "origin": "recording_start"
+  },
   "started_at": "2026-09-12T11:30:00+09:00",
   "title": "週次ミーティング",
+  "title_edited_by_user": true,
   "language_mode": "mixed",
   "allow_external_send": false,
   "format_profile_id": "9d2f1a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b",
   "tracks": [
-    { "track_id": "imported-audio", "role": "mixed", "start_offset_ms": 0, "container": "m4a", "codec": "aac", "sample_rate": 48000, "channels": 2, "duration_ms": 4354000, "byte_size": 69664000, "sha256": "0000000000000000000000000000000000000000000000000000000000000003", "original_container": "m4a" }
+    {
+      "track_id": "imported-audio",
+      "role": "mixed",
+      "start_offset_ms": 0,
+      "container": "m4a",
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": 2,
+      "duration_ms": 4354000,
+      "byte_size": 69664000,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+      "original_container": "m4a"
+    }
   ],
-  "source": { "kind": "file", "app_name": null, "bundle_id": null, "tab_host": null, "client": "audio-minutes-cli/0.1.0" }
+  "source": {
+    "kind": "file",
+    "app_name": null,
+    "bundle_id": null,
+    "tab_host": null,
+    "client": "audio-minutes-cli/0.1.0"
+  }
 }

@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# 開発用固定 ID の秘密鍵。公開鍵 (manifest.key) だけを追跡する
+keys/*.pem

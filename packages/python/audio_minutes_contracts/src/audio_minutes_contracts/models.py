@@ -134,12 +134,15 @@ class RecordingSource(_Strict):
 
 
 class RecordingPackage(_Strict):
-    schema_version: Literal["recording-package/1"] = "recording-package/1"
+    schema_version: Literal["recording-package/2"] = "recording-package/2"
     session_id: UUID
     input_kind: InputKind
     time_base: TimeBase = Field(default_factory=TimeBase)
     started_at: datetime
+    # 表示用タイトル。未入力ならクライアントが録音元・ファイル名と日時から仮生成する
     title: str | None = Field(default=None, max_length=200)
+    # 仮タイトルと利用者入力の区別 (FR-107 / FR-141)。false のときだけ Claude の提案を採用してよい
+    title_edited_by_user: bool = False
     language_mode: LanguageMode = LanguageMode.AUTO
     allow_external_send: bool = True
     format_profile_id: UUID | None = None
@@ -381,6 +384,45 @@ class WorkerResult(_Strict):
     claude: ClaudeUsage | None = None
 
 
+class TranscriptionJobSettings(_Strict):
+    """transcription ジョブの設定スナップショット。API が producer、transcription-worker が consumer。
+
+    `transcript_revision` は「この実行が作ろうとしている transcript の版」で、投入の冪等キー
+    (要求世代) とは別物。冪等キーは jobs.idempotency_key が持つ。
+    """
+
+    input_kind: InputKind
+    language_mode: LanguageMode
+    transcript_revision: int = Field(ge=1)
+    max_audio_ms: int = Field(ge=1)
+    requested_backend: Literal["cpu", "vulkan"] | None = None
+    strategy: Strategy | None = None
+
+
+class MinutesJobSettings(_Strict):
+    """minutes_generation ジョブの設定スナップショット。API が producer、minutes-worker が consumer。
+
+    外部送信の可否 (`allow_external_send`) と接続 owner (`connected_owner_id`) は API が
+    投入時に確定させ、worker は送信直前にこの 2 つと実際のログイン状態を再検査する。
+    どちらかが欠けている payload は worker が拒否する (FR-129 / M5 安全条件)。
+    """
+
+    kind: Literal["claude_generated", "claude_regenerated"]
+    allow_external_send: bool
+    connected_owner_id: UUID | None
+    # 利用者が編集したタイトル。未編集のときだけ Claude の提案タイトルを採用してよい
+    title: str = Field(max_length=200)
+    title_edited_by_user: bool
+    input_kind: InputKind
+    format_snapshot: FormatProfile | None = None
+    instructions: str | None = Field(default=None, max_length=8000)
+    started_at: datetime | None = None
+    duration_ms: int | None = None
+    transcript_revision: int | None = None
+    expected_current_version_id: UUID | None = None
+    chunk_chars: int | None = None
+
+
 class Job(_Strict):
     schema_version: Literal["job/1"] = "job/1"
     job_id: UUID
@@ -399,6 +441,7 @@ class Job(_Strict):
     lease_expires_at: datetime | None = None
     heartbeat_at: datetime | None = None
     available_at: datetime | None = None
+    external_dispatch_started_at: datetime | None = None
     result: WorkerResult | None = None
     failure: JobFailure | None = None
     created_at: datetime
@@ -487,3 +530,7 @@ class Session(_Strict):
     audio_expires_at: datetime | None = None
     shared_with: list[UUID]
     is_shared_view: bool = False
+
+
+# MinutesJobSettings は後方で定義される FormatProfile を参照するため、最後に解決する。
+MinutesJobSettings.model_rebuild()

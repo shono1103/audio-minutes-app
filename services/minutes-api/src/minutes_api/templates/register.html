@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<p>{{ lead }}</p>
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  <label for="email">メールアドレス</label>
+  <input id="email" name="email" type="email" required autocomplete="username" value="{{ email or '' }}" {% if email_locked %}readonly{% endif %}>
+  <button type="button" id="register-passkey">パスキーで登録 (推奨)</button>
+  <span id="passkey-status" class="muted" role="status"></span>
+  <section id="registration-complete" hidden>
+    <p class="notice">登録しました。以下のリカバリーコードは一度だけ表示されます。安全な場所に保管してください。</p>
+    <p id="recovery-codes"></p>
+    <p><a id="registration-next" href="/auth/login">続ける</a></p>
+  </section>
+  <details>
+    <summary>パスワードで登録する</summary>
+    <label for="password">パスワード (15 文字以上)</label>
+    <input id="password" name="password" type="password" minlength="15" autocomplete="new-password">
+    <p class="muted">パスキーを利用できない場合のフォールバックです。パスワードは Argon2id でハッシュ化して保存し、平文では保持しません。</p>
+    <button type="submit">パスワードで登録</button>
+  </details>
+</form>
+<script>
+const b64u = {
+  enc: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),
+  dec: (s) => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/').padEnd(s.length + (4 - s.length % 4) % 4, '=')), c => c.charCodeAt(0)),
+};
+document.getElementById('register-passkey').addEventListener('click', async () => {
+  const status = document.getElementById('passkey-status');
+  const email = document.getElementById('email');
+  if (!email.reportValidity()) return;
+  try {
+    status.textContent = 'パスキー登録を開始しています…';
+    const base = {{ action|tojson }} + '/webauthn';
+    const optResp = await fetch(base + '/options', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': {{ csrf_token|tojson }}},
+      body:JSON.stringify({email:email.value}),
+    });
+    if (!optResp.ok) throw new Error('options');
+    const options = await optResp.json();
+    options.challenge = b64u.dec(options.challenge);
+    options.user.id = b64u.dec(options.user.id);
+    (options.excludeCredentials || []).forEach(c => c.id = b64u.dec(c.id));
+    const cred = await navigator.credentials.create({publicKey: options});
+    const body = {
+      id: cred.id, rawId: b64u.enc(cred.rawId), type: cred.type,
+      response: {clientDataJSON:b64u.enc(cred.response.clientDataJSON), attestationObject:b64u.enc(cred.response.attestationObject), transports:cred.response.getTransports ? cred.response.getTransports() : []},
+      clientExtensionResults: cred.getClientExtensionResults(),
+    };
+    const verify = await fetch(base + '/verify', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token': {{ csrf_token|tojson }}}, body:JSON.stringify(body),
+    });
+    if (!verify.ok) throw new Error('verify');
+    const result = await verify.json();
+    const codes = document.getElementById('recovery-codes');
+    for (const value of result.recovery_codes) {
+      const code = document.createElement('code');
+      code.className = 'recovery';
+      code.textContent = value;
+      codes.appendChild(code);
+    }
+    document.getElementById('registration-next').href = result.next;
+    document.getElementById('registration-complete').hidden = false;
+    document.getElementById('register-passkey').disabled = true;
+    status.textContent = 'パスキーを登録しました';
+  } catch (e) {
+    status.textContent = 'パスキー登録に失敗または中止しました。再試行するか、パスワードを利用してください。';
+  }
+});
+</script>
+{% endblock %}

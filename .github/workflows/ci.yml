@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-and-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extensions/chrome/package-lock.json
+      - name: Python lint
+        run: make lint
+      - name: Python tests
+        run: make test
+      - name: Chrome extension tests and build
+        run: |
+          cd extensions/chrome
+          npm ci
+          npm test
+          npm run build
+      - name: OpenAPI is current
+        run: |
+          make openapi
+          git diff --exit-code -- contracts/api/openapi.json
+
+  # CPU 経路の全イメージを build する。Bookworm の apt python3 (3.11) を掴むような
+  # 版ずれや、共有 volume の所有者・mode のずれをここで落とす。
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build minutes-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/minutes-api/Dockerfile
+          push: false
+          load: true
+          tags: audio-minutes/minutes-api:ci
+      - name: Build transcription-worker (CPU)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/transcription-worker/Dockerfile
+          push: false
+          load: true
+          tags: audio-minutes/transcription-worker:ci
+      - name: Build minutes-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/minutes-worker/Dockerfile
+          push: false
+          load: true
+          tags: audio-minutes/minutes-worker:ci
+      - name: コンテナ内 Python 版と entrypoint を確認
+        run: |
+          set -eu
+          for image in minutes-api transcription-worker minutes-worker; do
+            echo "== $image =="
+            docker run --rm --entrypoint python3 "audio-minutes/$image:ci" \
+              -c 'import sys; assert sys.version_info >= (3, 12), sys.version; print(sys.version)'
+          done
+          # worker の entrypoint が起動すること (DB 未設定で終了コード 2 を返す)
+          docker run --rm --entrypoint transcription-worker audio-minutes/transcription-worker:ci && exit 1 || test $? -eq 2
+          docker run --rm --entrypoint claude audio-minutes/minutes-worker:ci --version
+      - name: 共有 volume の所有者・mode が全イメージで一致すること
+        run: |
+          set -eu
+          expected=""
+          for image in minutes-api transcription-worker minutes-worker; do
+            actual="$(docker run --rm --user 0:0 --entrypoint stat "audio-minutes/$image:ci" \
+              -c '%a %U:%G' /var/lib/audio-minutes/artifacts)"
+            echo "$image: $actual"
+            if [ -z "$expected" ]; then expected="$actual"; fi
+            [ "$actual" = "$expected" ] || { echo "artifacts の所有者・mode が揃っていません" >&2; exit 1; }
+          done
+          [ "$expected" = "2775 root:am-shared" ] || { echo "期待値と違います: $expected" >&2; exit 1; }
+
+  swift:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift tests and builds
+        run: make test-swift
