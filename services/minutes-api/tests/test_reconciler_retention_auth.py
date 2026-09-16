@@ -223,6 +223,40 @@ def test_active_upload_claim_and_transcription_protect_files(db, settings) -> No
     assert plan.artifact_ids == () and session.audio_retained is True
 
 
+def test_retention_expires_abandoned_live_session(db, settings) -> None:
+    from conftest import make_user
+
+    owner = make_user(db)
+    session = models.MeetingSession(
+        id=uuid.uuid4(), owner_id=owner.id, title="abandoned", input_kind="recorded_dual_track",
+        language_mode="auto", package={"live_recording": True, "tracks": []}, status="recording",
+        started_at=now(), created_at=now() - timedelta(days=2),
+    )
+    db.add(session)
+    db.flush()
+    store = sessions_service.artifact_store(settings)
+    stored = store.put_bytes(b"chunk")
+    artifact = models.Artifact(
+        id=stored.artifact_id, session_id=session.id, kind="audio_chunk", track_id="app-audio",
+        content_type="audio/wav", byte_size=stored.byte_size, sha256=stored.sha256,
+    )
+    chunk = models.LiveAudioChunk(
+        session_id=session.id, track_id="app-audio", role="app", sequence=0, start_offset_ms=0,
+        duration_ms=1000, byte_size=stored.byte_size, sha256=stored.sha256,
+        audio_artifact_id=stored.artifact_id, state="uploaded", expires_at=now() - timedelta(seconds=1),
+    )
+    db.add_all([artifact, chunk])
+    db.flush()
+
+    plan = retention.plan_sweep(db, active_transcription_sessions=set())
+
+    assert session.status == "failed"
+    assert session.failure["code"] == "upload_expired"
+    assert chunk.state == "failed"
+    assert artifact.deleted_at is not None
+    assert plan.artifact_ids == (artifact.id,)
+
+
 def test_temp_sweep_removes_only_unreferenced_old_upload_parts(db, settings) -> None:
     from conftest import make_upload, make_user
 

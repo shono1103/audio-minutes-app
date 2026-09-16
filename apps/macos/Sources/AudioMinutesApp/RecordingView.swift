@@ -90,6 +90,16 @@ struct RecordingView: View {
                     if model.isRecording {
                         Label("録音中 \(duration(model.elapsed)) — 入力元と処理先は固定されています", systemImage: "record.circle.fill")
                             .foregroundStyle(.red).accessibilityLabel("録音中、経過時間 \(duration(model.elapsed))")
+                        if model.liveFailedChunks > 0 {
+                            Label("先行文字起こしを利用できない区間があります。停止後に完全音声で処理します", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else if model.liveUploadedChunks > 0 {
+                            Label("文字起こしを先行処理中 — 送信済み \(model.liveUploadedChunks)チャンク", systemImage: "waveform.badge.magnifyingglass")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Label("文字起こし準備中", systemImage: "clock")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
 

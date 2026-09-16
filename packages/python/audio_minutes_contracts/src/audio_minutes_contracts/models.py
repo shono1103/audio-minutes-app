@@ -59,6 +59,7 @@ class JobStatus(StrEnum):
 
 
 class SessionStatus(StrEnum):
+    RECORDING = "recording"
     UPLOADING = "uploading"
     VALIDATING = "validating"
     QUEUED = "queued"
@@ -397,6 +398,10 @@ class TranscriptionJobSettings(_Strict):
     max_audio_ms: int = Field(ge=1)
     requested_backend: Literal["cpu", "vulkan"] | None = None
     strategy: Strategy | None = None
+    # 録音中の先行文字起こしでは、同じ sequence の2トラックを通常pipelineへ渡す。
+    # 値があるjobは最終Transcriptへ直接公開せず、APIが停止後に結合する。
+    live_chunk_sequence: int | None = Field(default=None, ge=0)
+    live_chunk_duration_ms: int | None = Field(default=None, ge=1, le=120_000)
 
 
 class MinutesJobSettings(_Strict):

@@ -290,6 +290,36 @@ class Upload(Base):
     session: Mapped[MeetingSession] = relationship(back_populates="uploads")
 
 
+class LiveAudioChunk(Base):
+    """録音中に先行処理する不変WAV chunk。2trackの同じsequenceを1jobへまとめる。"""
+
+    __tablename__ = "live_audio_chunks"
+    __table_args__ = (UniqueConstraint("session_id", "track_id", "sequence"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    track_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_offset_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    duration_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    audio_artifact_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    transcript_json_artifact_id: Mapped[str | None] = mapped_column(String(30))
+    transcript_md_artifact_id: Mapped[str | None] = mapped_column(String(30))
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="uploaded")
+    failure: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 

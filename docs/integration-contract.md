@@ -126,3 +126,6 @@ minutes-worker 10002)。共有する `artifacts` `models` `logs` は**全イメ�
   (worker は投入時のスナップショットしか見られないため)。
 * `transcript_revision` は「作ろうとしている版」で、投入の冪等キー (`idempotency_key`) とは別。
   利用者の再処理要求ごとに `sessions.transcription_generation` / `minutes_generation` を進める。
+* 録音中chunkのtranscription jobは `live_chunk_sequence` と `live_chunk_duration_ms` を持つ。
+  reconcilerは成果物を公開せずchunkへ仮関連付けし、完全WAVのfinalize後に連続性と両trackを
+  検証して最終Transcriptを一度だけ公開する。仮Transcriptからminutes jobは投入しない。

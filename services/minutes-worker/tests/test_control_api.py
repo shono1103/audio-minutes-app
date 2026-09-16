@@ -48,7 +48,7 @@ def test_login_flow(client):
         if state["state"] == "url_ready":
             break
         time.sleep(0.05)
-    assert state["state"] == "url_ready" and state["url"].startswith("https://claude.ai/")
+    assert state["state"] == "url_ready" and state["url"].startswith("https://claude.com/oauth/authorize")
     assert client.get("/internal/v1/claude/status", headers=headers()).json()["state"] == "login_pending"
     submitted = client.post(f"/internal/v1/claude/login/{auth_id}/code", headers=headers(), json={"code": "good-code"})
     assert submitted.status_code == 200

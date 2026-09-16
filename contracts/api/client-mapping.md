@@ -28,6 +28,9 @@
 
 | route | 応答 | Swift メソッド | 戻り値 |
 | --- | --- | --- | --- |
+| `POST /v1/sessions/live` | 録音中の `session` | `beginLiveSession(_:)` | `Session` |
+| `PUT /v1/sessions/{id}/live-chunks/{track_id}/{sequence}` | 単一chunkの状態 | `uploadLiveChunk(...)` | `LiveChunkStatus` |
+| `GET /v1/sessions/{id}/live-chunks` | `{items, uploaded, transcribed, failed}` | `liveChunkProgress(_:)` | `LiveChunkProgress` |
 | `POST /v1/sessions` | `session` | `createSession(_:)` | `Session` |
 | `GET /v1/sessions` | **`{items: [...], next_cursor}`** | `listSessions(cursor:limit:)` | `SessionList` |
 | `GET /v1/sessions/{id}` | `session` | `session(_:)` | `Session` |
@@ -44,6 +47,11 @@
 
 `POST /retry` と `POST /minutes/regenerate` は `Idempotency-Key` ヘッダーに対応する。
 同じ値での再送は同じ job を返し、指定しなければ要求ごとに新しい job を作る。
+
+録音中は `POST /sessions/live` で仮セッションを作り、PCM16 WAVを30秒単位で
+`PUT /live-chunks` へ送る。同じ `(session_id, track_id, sequence)` と内容の再送は冪等。
+停止後に通常の `POST /sessions` で完全な recording-package へ昇格し、完全WAVをtus送信して
+`POST /finalize` する。先行処理に欠番・失敗があれば完全WAVの通常処理へ戻る。
 
 ## 成果物・議事録
 

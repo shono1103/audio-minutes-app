@@ -13,12 +13,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from minutes_api.config import Settings, get_settings
-from minutes_api.models import Artifact, AuditLog, MeetingSession, Setting, Upload
+from minutes_api.models import Artifact, AuditLog, LiveAudioChunk, MeetingSession, Setting, Upload
 from minutes_api.security import now
 
 
@@ -176,6 +176,61 @@ def plan_sweep(
             }
 
     artifact_ids: list[str] = []
+    live_cutoff = at - timedelta(hours=policy.upload_hours)
+    live_session_ids = list(
+        db.execute(
+            select(MeetingSession.id).where(
+                MeetingSession.finalized_at.is_(None),
+                MeetingSession.deleted_at.is_(None),
+                MeetingSession.status == "recording",
+                MeetingSession.created_at <= live_cutoff,
+            )
+        ).scalars()
+    )
+    for session_id in live_session_ids:
+        session = _lock_session(db, session_id)
+        if (
+            session is None
+            or session.deleted_at is not None
+            or session.finalized_at is not None
+            or session.status != "recording"
+        ):
+            continue
+        active = (
+            session.id in active_transcription_sessions
+            if active_transcription_sessions is not None
+            else _has_active_transcription(db, session.id)
+        )
+        if active:
+            continue
+        chunks = list(db.execute(select(LiveAudioChunk).where(LiveAudioChunk.session_id == session.id)).scalars())
+        if chunks and any(chunk.expires_at > at for chunk in chunks):
+            continue
+        artifacts = list(
+            db.execute(
+                select(Artifact).where(Artifact.session_id == session.id, Artifact.deleted_at.is_(None))
+            ).scalars()
+        )
+        for artifact in artifacts:
+            artifact.deleted_at = at
+            artifact_ids.append(artifact.id)
+        for chunk in chunks:
+            chunk.state = "failed"
+            chunk.failure = {
+                "code": "upload_expired",
+                "stage": "storage",
+                "retryable": False,
+                "message": "録音中chunkの保持期限が切れました",
+            }
+        session.status = "failed"
+        session.failure = {
+            "code": "upload_expired",
+            "stage": "storage",
+            "retryable": False,
+            "message": "録音が完了しないまま保持期限が切れました",
+            "retained_artifacts": [],
+        }
+
     expired_audio_sessions = 0
     audio_session_ids = list(
         db.execute(
@@ -207,11 +262,20 @@ def plan_sweep(
         )
         if active:
             continue
+        chunk_rows = list(
+            db.execute(select(LiveAudioChunk).where(LiveAudioChunk.session_id == session.id)).scalars()
+        )
+        draft_ids = {
+            artifact_id
+            for chunk in chunk_rows
+            for artifact_id in (chunk.transcript_json_artifact_id, chunk.transcript_md_artifact_id)
+            if artifact_id is not None
+        }
         audio = list(
             db.execute(
                 select(Artifact).where(
                     Artifact.session_id == session.id,
-                    Artifact.kind == "audio_track",
+                    or_(Artifact.kind.in_(("audio_track", "audio_chunk")), Artifact.id.in_(draft_ids)),
                     Artifact.deleted_at.is_(None),
                 )
             ).scalars()

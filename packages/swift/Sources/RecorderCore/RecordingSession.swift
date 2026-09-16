@@ -189,12 +189,22 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
     var onFailure: (@Sendable (Error) -> Void)?
     private(set) var lastError: Error?
     private var finalization: TrackFinalization?
+    private var liveChunkWriter: LiveChunkWriter?
+    var onLiveChunkFailure: (@Sendable (Error) -> Void)?
 
-    init(trackID: TrackID, role: TrackRole, url: URL) throws {
+    init(trackID: TrackID, role: TrackRole, url: URL, sessionID: UUID? = nil,
+         liveChunkDirectory: URL? = nil,
+         onChunkReady: (@Sendable (LiveAudioChunk) -> Void)? = nil) throws {
         self.trackID = trackID
         self.role = role
         self.writer = try WavWriter(url: url)
         self.makeDownmixer = { try PCMDownmixer(inputFormat: $0) }
+        if let sessionID, let liveChunkDirectory, let onChunkReady {
+            self.liveChunkWriter = try LiveChunkWriter(
+                sessionID: sessionID, trackID: trackID, role: role,
+                directory: liveChunkDirectory, onReady: onChunkReady
+            )
+        }
     }
 
     init(trackID: TrackID, role: TrackRole, writer: any TrackAudioWriting,
@@ -216,6 +226,13 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
             guard let downmixer else { throw WavError.converterUnavailable }
             let converted = try downmixer.convert(buffer)
             try writer.append(buffer: converted)
+            if let liveChunkWriter {
+                do { try liveChunkWriter.append(buffer: converted) }
+                catch {
+                    self.liveChunkWriter = nil
+                    onLiveChunkFailure?(error)
+                }
+            }
             lock.unlock()
         } catch {
             lastError = error
@@ -255,6 +272,13 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
     private func finalizeWriter() throws -> TrackFinalization {
         if let finalization { return finalization }
         let value = try writer.finalize()
+        if let liveChunkWriter {
+            do { try liveChunkWriter.finalize() }
+            catch {
+                self.liveChunkWriter = nil
+                onLiveChunkFailure?(error)
+            }
+        }
         let result = TrackFinalization(sha256: value.sha256, byteSize: value.byteSize, durationMs: value.durationMs)
         finalization = result
         return result
@@ -288,9 +312,12 @@ public final class RecordingCoordinator: @unchecked Sendable {
     public var onLevels: (@Sendable (_ app: Float, _ mic: Float) -> Void)?
     public var onStoppedByTargetLoss: (@Sendable (AutomaticRecordingStop) -> Void)?
     public var onStoppedByTrackFailure: (@Sendable (String) -> Void)?
+    public var onLiveChunkReady: (@Sendable (LiveAudioChunk) -> Void)?
+    public var onLiveChunkFailure: (@Sendable (String) -> Void)?
 
     public var state: RecordingState { lock.withLock { machine.state } }
     public var currentSessionID: UUID? { state == .idle ? nil : sessionID }
+    public var currentStartedAt: Date? { state == .idle ? nil : startedAt }
     public var elapsed: TimeInterval { state == .recording ? Date().timeIntervalSince(startedAt) : 0 }
     public var currentTarget: RecordingTarget? { target }
 
@@ -313,8 +340,16 @@ public final class RecordingCoordinator: @unchecked Sendable {
             self.target = target
             self.options = options
             let directory = try store.prepare(sessionID: sessionID)
-            let app = try TrackWriter(trackID: .appAudio, role: .app, url: directory.appendingPathComponent("app-audio.wav"))
-            let mic = try TrackWriter(trackID: .microphone, role: .microphone, url: directory.appendingPathComponent("microphone.wav"))
+            let chunkDirectory = directory.appendingPathComponent("chunks", isDirectory: true)
+            let chunkReady: @Sendable (LiveAudioChunk) -> Void = { [weak self] chunk in self?.onLiveChunkReady?(chunk) }
+            let app = try TrackWriter(
+                trackID: .appAudio, role: .app, url: directory.appendingPathComponent("app-audio.wav"),
+                sessionID: sessionID, liveChunkDirectory: chunkDirectory, onChunkReady: chunkReady
+            )
+            let mic = try TrackWriter(
+                trackID: .microphone, role: .microphone, url: directory.appendingPathComponent("microphone.wav"),
+                sessionID: sessionID, liveChunkDirectory: chunkDirectory, onChunkReady: chunkReady
+            )
             appWriter = app
             micWriter = mic
             app.onLevel = { [weak self] level in self?.publishLevels(app: level, mic: nil) }
@@ -325,6 +360,9 @@ public final class RecordingCoordinator: @unchecked Sendable {
             let failed: @Sendable (Error) -> Void = { [weak self] error in self?.handleTrackFailure(error) }
             app.onFailure = failed
             mic.onFailure = failed
+            let liveFailed: @Sendable (Error) -> Void = { [weak self] error in self?.onLiveChunkFailure?(error.localizedDescription) }
+            app.onLiveChunkFailure = liveFailed
+            mic.onLiveChunkFailure = liveFailed
 
             switch target {
             case .app(let selected):

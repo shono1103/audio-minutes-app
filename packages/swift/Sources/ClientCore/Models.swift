@@ -121,6 +121,46 @@ public struct RecordingPackage: Codable, Sendable, Equatable {
     }
 }
 
+/// 完全WAVの長さが未確定な録音開始時に、先行文字起こし用sessionを確保する要求。
+public struct LiveSessionStart: Codable, Sendable, Equatable {
+    public var sessionId: UUID
+    public var startedAt: Date
+    public var title: String
+    public var titleEditedByUser: Bool
+    public var languageMode: LanguageMode
+    public var allowExternalSend: Bool
+    public var formatProfileId: UUID?
+    public var source: RecordingSource
+
+    public init(sessionId: UUID, startedAt: Date, title: String, titleEditedByUser: Bool,
+                languageMode: LanguageMode, allowExternalSend: Bool, formatProfileId: UUID?,
+                source: RecordingSource) {
+        self.sessionId = sessionId
+        self.startedAt = startedAt
+        self.title = title
+        self.titleEditedByUser = titleEditedByUser
+        self.languageMode = languageMode
+        self.allowExternalSend = allowExternalSend
+        self.formatProfileId = formatProfileId
+        self.source = source
+    }
+}
+
+public struct LiveChunkStatus: Codable, Sendable, Equatable {
+    public var trackId: String
+    public var sequence: Int
+    public var state: String
+    public var jobId: UUID?
+    public var durationMs: Int
+}
+
+public struct LiveChunkProgress: Codable, Sendable, Equatable {
+    public var items: [LiveChunkStatus]
+    public var uploaded: Int
+    public var transcribed: Int
+    public var failed: Int
+}
+
 public enum ClientInfo {
     public static let version = "0.1.0"
     public static var userAgent: String { "audio-minutes-client/\(version)" }
@@ -225,13 +265,14 @@ public struct JobFailure: Codable, Sendable, Equatable {
 // --- session -----------------------------------------------------------------
 
 public enum SessionStatus: String, Codable, Sendable, CaseIterable {
-    case uploading, validating, queued, transcribing, transcribed
+    case recording, uploading, validating, queued, transcribing, transcribed
     case queuedMinutes = "queued_minutes"
     case generatingMinutes = "generating_minutes"
     case completed, failed, deleting
 
     public var label: String {
         switch self {
+        case .recording: return "録音中・先行文字起こし中"
         case .uploading: return "アップロード中"
         case .validating: return "検証中"
         case .queued: return "待機中"

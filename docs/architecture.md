@@ -14,6 +14,12 @@ Colima / Docker Compose (deploy/)
                                                    whisper.cpp Vulkan)    専用資格情報 volume)
 ```
 
+録音では完全な2トラックWAVをローカルへ保存しながら、各トラックを30秒のPCM16 WAVへ
+分割してAPIへ送る。同じsequenceの2トラックが揃うと通常のtranscription jobとして先行処理し、
+結果は仮成果物として保持する。停止後に完全WAVをtus送信して整合性を確認し、全chunkが成功して
+いれば時刻を録音開始基準へ補正して最終Transcriptへ統合する。欠番・送信失敗・処理失敗があれば
+完全WAVのバッチ文字起こしへ戻る。Claudeへの投入は最終Transcript確定後だけ行う。
+
 * **契約が境界**: `contracts/` の JSON Schema と `contracts/sql/jobs.sql` だけを共有する。
   Python 側の写しは `packages/python/audio_minutes_contracts` (pydantic + Queue/ArtifactStore アダプター)。
 * **API は推論依存を持たない**: Whisper・Claude CLI は worker イメージだけに入る。

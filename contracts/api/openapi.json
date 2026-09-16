@@ -1116,6 +1116,188 @@
         }
       }
     },
+    "/v1/sessions/live": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "録音中の先行文字起こしsessionを開始",
+        "operationId": "begin_live_session_v1_sessions_live_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveSessionStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Begin Live Session V1 Sessions Live Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/live-chunks/{track_id}/{sequence}": {
+      "put": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "録音中の不変WAV chunkを冪等登録",
+        "operationId": "put_live_chunk_v1_sessions__session_id__live_chunks__track_id___sequence__put",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "sequence",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sequence"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "start_offset_ms",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "Start Offset Ms"
+            }
+          },
+          {
+            "name": "duration_ms",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 120000,
+              "minimum": 1,
+              "title": "Duration Ms"
+            }
+          },
+          {
+            "name": "sha256",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Put Live Chunk V1 Sessions  Session Id  Live Chunks  Track Id   Sequence  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/live-chunks": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "先行文字起こしchunkの進捗",
+        "operationId": "live_chunk_status_v1_sessions__session_id__live_chunks_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Live Chunk Status V1 Sessions  Session Id  Live Chunks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sessions/{session_id}": {
       "get": {
         "tags": [
@@ -3037,6 +3219,72 @@
           "mixed"
         ],
         "title": "LanguageMode"
+      },
+      "LiveSessionStart": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "title_edited_by_user": {
+            "type": "boolean",
+            "title": "Title Edited By User",
+            "default": false
+          },
+          "language_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "ja",
+              "en",
+              "mixed"
+            ],
+            "title": "Language Mode",
+            "default": "auto"
+          },
+          "allow_external_send": {
+            "type": "boolean",
+            "title": "Allow External Send",
+            "default": true
+          },
+          "format_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format Profile Id"
+          },
+          "source": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "started_at",
+          "title",
+          "source"
+        ],
+        "title": "LiveSessionStart"
       },
       "ManualEditRequest": {
         "properties": {

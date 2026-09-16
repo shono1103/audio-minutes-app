@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, Literal
 
 from audio_minutes_contracts.models import RecordingPackage
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from minutes_api import audit, jobs, sessions_service
+from minutes_api import audit, jobs, live_transcription, sessions_service
 from minutes_api.db import db_dependency
 from minutes_api.deps import Principal, SessionAccess, current_principal, session_access, session_owner_access
 from minutes_api.errors import ApiException, not_found
@@ -34,6 +35,17 @@ class RetryRequest(BaseModel):
 class ShareRequest(BaseModel):
     user_id: uuid.UUID | None = None
     email: str | None = None
+
+
+class LiveSessionStart(BaseModel):
+    session_id: uuid.UUID
+    started_at: datetime
+    title: str = Field(min_length=1, max_length=200)
+    title_edited_by_user: bool = False
+    language_mode: Literal["auto", "ja", "en", "mixed"] = "auto"
+    allow_external_send: bool = True
+    format_profile_id: uuid.UUID | None = None
+    source: dict[str, Any]
 
 
 def _job_view(job: dict[str, Any]) -> dict[str, Any]:
@@ -59,6 +71,66 @@ def create_session(package: RecordingPackage, response: Response, principal: Pri
         response.status_code = 200
     db.flush()
     return sessions_service.serialize(db, session, principal.id)
+
+
+@router.post("/live", status_code=201, summary="録音中の先行文字起こしsessionを開始")
+def begin_live_session(
+    body: LiveSessionStart,
+    response: Response,
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(db_dependency),
+) -> dict:
+    existing = db.get(MeetingSession, body.session_id)
+    session = live_transcription.begin_session(db, principal.user, body.model_dump())
+    if existing is not None:
+        response.status_code = 200
+    return sessions_service.serialize(db, session, principal.id)
+
+
+@router.put("/{session_id}/live-chunks/{track_id}/{sequence}", summary="録音中の不変WAV chunkを冪等登録")
+async def put_live_chunk(
+    track_id: str,
+    sequence: int,
+    request: Request,
+    start_offset_ms: int = Query(ge=0),
+    duration_ms: int = Query(ge=1, le=120_000),
+    sha256: str = Query(pattern=r"^[0-9a-f]{64}$"),
+    access: SessionAccess = Depends(session_owner_access),
+    db: Session = Depends(db_dependency),
+) -> dict:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > live_transcription.MAX_CHUNK_BYTES:
+        raise ApiException(400, "limit_exceeded", "chunkの大きさが上限を超えています", stage="upload")
+    body = bytearray()
+    async for part in request.stream():
+        if len(body) + len(part) > live_transcription.MAX_CHUNK_BYTES:
+            raise ApiException(400, "limit_exceeded", "chunkの大きさが上限を超えています", stage="upload")
+        body.extend(part)
+    row = live_transcription.put_chunk(
+        db,
+        access.session,
+        access.principal.user,
+        track_id=track_id,
+        sequence=sequence,
+        start_offset_ms=start_offset_ms,
+        duration_ms=duration_ms,
+        sha256=sha256,
+        body=bytes(body),
+    )
+    return live_transcription.chunk_status(row)
+
+
+@router.get("/{session_id}/live-chunks", summary="先行文字起こしchunkの進捗")
+def live_chunk_status(
+    access: SessionAccess = Depends(session_owner_access), db: Session = Depends(db_dependency)
+) -> dict:
+    rows = live_transcription.rows_for_session(db, access.session.id)
+    return {
+        "items": [live_transcription.chunk_status(row) for row in rows],
+        "uploaded": len(rows),
+        "transcribed": sum(row.state == "transcribed" for row in rows),
+        "failed": sum(row.state in ("failed", "cancelled") for row in rows),
+    }
 
 
 @router.get("", summary="セッション一覧 (所有 + 共有先)")

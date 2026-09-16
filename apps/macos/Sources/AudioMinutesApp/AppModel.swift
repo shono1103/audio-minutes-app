@@ -68,6 +68,8 @@ final class AppModel: ObservableObject {
     @Published var selectedFormatID: UUID?
     @Published var pendingImportURL: URL?
     @Published var audioPlaybackURL: URL?
+    @Published var liveUploadedChunks = 0
+    @Published var liveFailedChunks = 0
 
     let settingsStore = SettingsStore()
     let localStore = LocalSessionStore()
@@ -79,6 +81,7 @@ final class AppModel: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private var elapsedTimer: Timer?
     private var lastStatuses: [UUID: SessionStatus] = [:]
+    private var liveUploaders: [UUID: LiveChunkUploadCoordinator] = [:]
 
     var recordingState: RecordingState { recorder.state }
     var isRecording: Bool { recorder.state == .recording || recorder.state == .finalizing }
@@ -332,12 +335,43 @@ final class AppModel: ObservableObject {
             settings.lastTarget = .init(kind: chromeTabID == nil ? "app" : "chrome_tab", bundleId: app.bundleID,
                                         tabTitle: chromeTabID.flatMap { id in chromeTabs.first(where: { $0.tabId == id })?.title })
             try settingsStore.save(settings)
+            liveUploadedChunks = 0
+            liveFailedChunks = 0
             try recorder.start(target: target, microphone: microphone,
                                options: .init(title: title, languageMode: languageMode, allowExternalSend: allowExternalSend,
                                               formatProfileId: selectedFormatID,
                                               destinationOrigin: binding.destinationOrigin,
                                               ownerUserId: binding.ownerUserId),
                                chromeSink: chromeTabID == nil ? nil : bridge.sink)
+            if let service, let sessionID = recorder.currentSessionID {
+                let startedAt = recorder.currentStartedAt ?? Date()
+                let entered = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let liveTitle = entered.isEmpty ? RecordingCoordinator.provisionalTitle(target: target, date: startedAt) : entered
+                let coordinator = LiveChunkUploadCoordinator(
+                    service: service,
+                    startRequest: LiveSessionStart(
+                        sessionId: sessionID,
+                        startedAt: startedAt,
+                        title: liveTitle,
+                        titleEditedByUser: !entered.isEmpty,
+                        languageMode: languageMode,
+                        allowExternalSend: allowExternalSend,
+                        formatProfileId: selectedFormatID,
+                        source: target.source
+                    )
+                ) { [weak self] progress in
+                    Task { @MainActor in
+                        self?.liveUploadedChunks = progress.uploaded
+                        self?.liveFailedChunks = progress.failed
+                    }
+                }
+                liveUploaders[sessionID] = coordinator
+                recorder.onLiveChunkReady = { [weak coordinator] chunk in coordinator?.enqueue(chunk) }
+                recorder.onLiveChunkFailure = { [weak self] _ in
+                    Task { @MainActor in self?.liveFailedChunks += 1 }
+                }
+                coordinator.begin()
+            }
             if case .chromeTab(_, let tabID, _) = target {
                 do { _ = try bridge.requestCapture(tabID: tabID) }
                 catch {
@@ -433,6 +467,13 @@ final class AppModel: ObservableObject {
     private func upload(_ state: LocalSessionState) async {
         guard let service else { return }
         do {
+            recorder.onLiveChunkReady = nil
+            recorder.onLiveChunkFailure = nil
+            if let live = liveUploaders.removeValue(forKey: state.package.sessionId) {
+                let progress = await live.finish()
+                liveUploadedChunks = progress.uploaded
+                liveFailedChunks = progress.failed
+            }
             try recorder.markUploading(); _ = try await localStore.uploadPending(state, service: service)
             try recorder.markUploaded(); reloadLocalSessions(); await refresh()
         } catch {

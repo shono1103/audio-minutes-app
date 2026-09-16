@@ -79,6 +79,35 @@ final class RecordingPrimitivesTests: XCTestCase {
         XCTAssertThrowsError(try writer.finalize())
     }
 
+    func testLiveChunkWriterCreatesThirtySecondChunkAndFlushesRemainder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let chunks = LockedBox<[LiveAudioChunk]>([])
+        let sessionID = UUID()
+        let writer = try LiveChunkWriter(
+            sessionID: sessionID, trackID: .appAudio, role: .app, directory: directory
+        ) { chunk in chunks.update { $0.append(chunk) } }
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true
+        )!
+        let frames = AVAudioFrameCount(31 * 16_000)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        if let samples = buffer.int16ChannelData?[0] {
+            samples.initialize(repeating: 0, count: Int(frames))
+        }
+
+        try writer.append(buffer: buffer)
+        try writer.finalize()
+
+        let result = chunks.read()
+        XCTAssertEqual(result.map(\.sequence), [0, 1])
+        XCTAssertEqual(result.map(\.startOffsetMs), [0, 29_000])
+        XCTAssertEqual(result.map(\.durationMs), [30_000, 2_000])
+        XCTAssertTrue(result.allSatisfy { FileManager.default.fileExists(atPath: $0.fileURL.path) })
+        XCTAssertTrue(result.allSatisfy { $0.sha256.count == 64 })
+    }
+
     func testAppendDiskFailureNotifiesOnceAndStopsAcceptingData() {
         let writer = FaultWriter()
         writer.appendError = CocoaError(.fileWriteOutOfSpace)

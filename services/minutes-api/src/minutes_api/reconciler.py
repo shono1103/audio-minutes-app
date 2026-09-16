@@ -14,8 +14,16 @@ from audio_minutes_contracts.models import Transcript as TranscriptContract
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from minutes_api import minutes_service
-from minutes_api.models import Artifact, ClaudeConnection, MeetingSession, MinutesVersion, Transcript, User
+from minutes_api import live_transcription, minutes_service
+from minutes_api.models import (
+    Artifact,
+    ClaudeConnection,
+    LiveAudioChunk,
+    MeetingSession,
+    MinutesVersion,
+    Transcript,
+    User,
+)
 from minutes_api.sessions_service import artifact_store
 
 logger = logging.getLogger(__name__)
@@ -180,6 +188,108 @@ def _reconcile_transcription(db: Session, session: MeetingSession, job: Mapping[
     )
 
 
+def _is_live_chunk_job(job: Mapping[str, Any]) -> bool:
+    return (_json(job.get("settings")) or {}).get("live_chunk_sequence") is not None
+
+
+def _reconcile_live_chunk(db: Session, session: MeetingSession, job: Mapping[str, Any], result: WorkerResult) -> None:
+    """chunk成果物を仮保存する。公開TranscriptとClaude処理は停止後の全体統合まで進めない。"""
+    if result.kind is not JobKind.TRANSCRIPTION or result.outcome != "succeeded":
+        raise InvalidWorkerResult("先行文字起こしjobのresult種別が一致しません")
+    by_kind = {item.kind: item for item in result.artifacts}
+    if "transcript_json" not in by_kind or set(by_kind) - {"transcript_json", "transcript_md"}:
+        raise InvalidWorkerResult("先行文字起こし成果物の構成が不正です")
+    try:
+        with artifact_store().open(by_kind["transcript_json"].artifact_id) as handle:
+            document = TranscriptContract.model_validate_json(handle.read())
+    except (OSError, ValueError) as exc:
+        raise InvalidWorkerResult("先行文字起こし成果物を読み込めません") from exc
+    if document.session_id != session.id:
+        raise InvalidWorkerResult("先行文字起こしのsessionがjobと一致しません")
+    input_ids = {
+        item.get("artifact_id")
+        for item in (_json(job.get("input")) or {}).get("artifacts", [])
+        if item.get("kind") == "audio_track"
+    }
+    if {track.source_artifact_id for track in document.tracks} != input_ids:
+        raise InvalidWorkerResult("先行文字起こしの入力音声がjobと一致しません")
+    json_artifact = _validated_artifact(db, session, by_kind["transcript_json"])
+    md_artifact = _validated_artifact(db, session, by_kind["transcript_md"]) if "transcript_md" in by_kind else None
+    rows = list(db.execute(select(LiveAudioChunk).where(LiveAudioChunk.job_id == job["job_id"])).scalars())
+    if {row.audio_artifact_id for row in rows} != input_ids:
+        raise InvalidWorkerResult("先行文字起こしchunkとjob入力が一致しません")
+    for row in rows:
+        row.transcript_json_artifact_id = json_artifact.id
+        row.transcript_md_artifact_id = md_artifact.id if md_artifact else None
+        row.state = "transcribed"
+        row.failure = None
+
+
+def _publish_live_transcript(db: Session, session: MeetingSession, rows: list[LiveAudioChunk]) -> None:
+    transcript = live_transcription.merged_transcript(db, session, rows)
+    store = artifact_store()
+    json_stored = store.put_bytes(transcript.model_dump_json().encode("utf-8"))
+    md_stored = store.put_bytes(transcript.to_markdown().encode("utf-8"))
+    result = WorkerResult(
+        kind=JobKind.TRANSCRIPTION,
+        outcome="succeeded",
+        artifacts=[
+            {
+                "artifact_id": json_stored.artifact_id,
+                "kind": "transcript_json",
+                "byte_size": json_stored.byte_size,
+                "sha256": json_stored.sha256,
+                "content_type": "application/json",
+            },
+            {
+                "artifact_id": md_stored.artifact_id,
+                "kind": "transcript_md",
+                "byte_size": md_stored.byte_size,
+                "sha256": md_stored.sha256,
+                "content_type": "text/markdown",
+            },
+        ],
+        processing=transcript.processing,
+    )
+    audio = list(
+        db.execute(
+            select(Artifact)
+            .where(Artifact.session_id == session.id, Artifact.kind == "audio_track", Artifact.deleted_at.is_(None))
+            .order_by(Artifact.track_id)
+        ).scalars()
+    )
+    synthetic_job = {
+        "job_id": uuid.uuid5(uuid.NAMESPACE_URL, f"audio-minutes:live-final:{session.id}:{transcript.revision}"),
+        "kind": JobKind.TRANSCRIPTION.value,
+        "session_id": session.id,
+        "input": {
+            "artifacts": [
+                {"artifact_id": item.id, "kind": "audio_track", "track_id": item.track_id}
+                for item in audio
+            ]
+        },
+        "settings": {"transcript_revision": transcript.revision},
+    }
+    _reconcile_transcription(db, session, synthetic_job, result)
+
+
+def settle_live_session(db: Session, session: MeetingSession) -> str:
+    """停止後のchunk群を公開するか、完全WAVの通常jobへフォールバックする。"""
+    from minutes_api.sessions_service import enqueue_transcription
+
+    rows = live_transcription.rows_for_session(db, session.id)
+    state = live_transcription.finalization_state(session, rows)
+    if state == "ready":
+        _publish_live_transcript(db, session, rows)
+        return "merged"
+    if state in {"absent", "fallback"}:
+        if session.transcription_job_id is None and session.transcript_revision is None:
+            enqueue_transcription(db, session)
+        return "fallback"
+    session.status = "transcribing"
+    return "waiting"
+
+
 def _reconcile_minutes(db: Session, session: MeetingSession, job: Mapping[str, Any], result: WorkerResult) -> None:
     if result.kind is not JobKind.MINUTES_GENERATION:
         raise InvalidWorkerResult("議事録 job の result 種別が一致しません")
@@ -239,7 +349,25 @@ def reconcile_job(db: Session, job: Mapping[str, Any]) -> None:
     session = db.execute(
         select(MeetingSession).where(MeetingSession.id == job["session_id"]).with_for_update()
     ).scalars().first()
-    if session is None or session.deleted_at is not None or not _current_job(session, job):
+    live_chunk = _is_live_chunk_job(job)
+    if session is None or session.deleted_at is not None or (not live_chunk and not _current_job(session, job)):
+        return
+    if live_chunk:
+        rows = list(db.execute(select(LiveAudioChunk).where(LiveAudioChunk.job_id == job["job_id"])).scalars())
+        if job["status"] in {"failed", "cancelled"}:
+            for row in rows:
+                row.state = job["status"]
+                row.failure = _json(job.get("failure")) or _failure("internal", "transcription", "先行文字起こしに失敗しました")
+        else:
+            try:
+                _reconcile_live_chunk(db, session, job, WorkerResult.model_validate(_json(job.get("result"))))
+            except (InvalidWorkerResult, ValueError, TypeError) as exc:
+                logger.warning("先行文字起こし成果物を確定できません job=%s reason=%s", job["job_id"], exc)
+                for row in rows:
+                    row.state = "failed"
+                    row.failure = _failure("internal", "storage", "先行文字起こし成果物を検証できません")
+        if session.finalized_at is not None:
+            settle_live_session(db, session)
         return
     if job["status"] == "failed":
         session.status = "failed"

@@ -89,6 +89,9 @@ def test_openapi_contains_core_routes() -> None:
         "/v1/account/passkeys/browser/{request_id}",
         "/v1/admin/claude/login/{auth_session_id}/code",
         "/v1/sessions",
+        "/v1/sessions/live",
+        "/v1/sessions/{session_id}/live-chunks/{track_id}/{sequence}",
+        "/v1/sessions/{session_id}/live-chunks",
         "/v1/uploads/{upload_id}",
     ):
         assert expected in paths

@@ -58,6 +58,33 @@ public final class SessionService: @unchecked Sendable {
         try await client.post("/v1/sessions", body: package)
     }
 
+    public func beginLiveSession(_ request: LiveSessionStart) async throws -> Session {
+        try await client.post("/v1/sessions/live", body: request)
+    }
+
+    public func uploadLiveChunk(sessionID: UUID, trackID: TrackID, sequence: Int,
+                                startOffsetMs: Int, durationMs: Int, sha256: String,
+                                file: URL) async throws -> LiveChunkStatus {
+        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        let response = try await client.raw(
+            method: "PUT",
+            path: path(sessionID, "/live-chunks/\(trackID.rawValue)/\(sequence)"),
+            query: [
+                "start_offset_ms": String(startOffsetMs),
+                "duration_ms": String(durationMs),
+                "sha256": sha256,
+            ],
+            headers: ["Content-Type": "audio/wav"],
+            body: data,
+            expect: 200...299
+        )
+        return try ContractCoding.decoder().decode(LiveChunkStatus.self, from: response.body)
+    }
+
+    public func liveChunkProgress(_ id: UUID) async throws -> LiveChunkProgress {
+        try await client.get(path(id, "/live-chunks"))
+    }
+
     public func listSessions(cursor: String? = nil, limit: Int = 50) async throws -> SessionList {
         try await client.get("/v1/sessions", query: ["cursor": cursor, "limit": String(limit)])
     }

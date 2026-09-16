@@ -79,11 +79,6 @@ def provisional_title(package: RecordingPackage) -> str:
 def create_session(db: Session, owner: User, package: RecordingPackage) -> MeetingSession:
     """session_id で冪等。同じ owner の再送は既存を返し、別 owner の衝突は 409。"""
     settings = get_settings()
-    existing = db.get(MeetingSession, package.session_id)
-    if existing is not None:
-        if existing.owner_id != owner.id or existing.deleted_at is not None:
-            raise ApiException(409, "conflict", "このセッション ID は使用できません")
-        return existing
     required = set(package.required_track_ids())
     provided = {track.track_id for track in package.tracks}
     if required != provided:
@@ -96,6 +91,30 @@ def create_session(db: Session, owner: User, package: RecordingPackage) -> Meeti
             raise ApiException(400, "limit_exceeded", "音声は最長 4 時間までです", stage="validation")
         if track.byte_size > settings.max_upload_bytes:
             raise ApiException(400, "limit_exceeded", "取り込みファイルは最大 2 GiB までです", stage="validation")
+    existing = db.get(MeetingSession, package.session_id)
+    if existing is not None:
+        if existing.owner_id != owner.id or existing.deleted_at is not None:
+            raise ApiException(409, "conflict", "このセッション ID は使用できません")
+        # 録音開始時に作った先行文字起こし用sessionを、停止後の完全な
+        # recording-packageで通常sessionへ昇格する。再送済みならそのまま返す。
+        if existing.package.get("live_recording") is not True:
+            return existing
+        if existing.finalized_at is not None:
+            return existing
+        if existing.input_kind != package.input_kind.value:
+            raise ApiException(409, "conflict", "先行文字起こしの入力種別と一致しません")
+        existing.title = provisional_title(package)
+        existing.title_edited_by_user = package.title_edited_by_user
+        existing.language_mode = package.language_mode.value
+        existing.allow_external_send = package.allow_external_send
+        existing.package = json.loads(package.model_dump_json())
+        existing.status = "uploading"
+        existing.started_at = package.started_at
+        existing.duration_ms = max(track.start_offset_ms + track.duration_ms for track in package.tracks)
+        _add_uploads(db, existing, package)
+        audit.record(db, "live_session_promoted", actor_id=owner.id, target_type="session", target_id=existing.id)
+        db.flush()
+        return existing
     snapshot = formats_service.snapshot_for(db, owner, package.format_profile_id)
     session = MeetingSession(
         id=package.session_id,
@@ -116,8 +135,19 @@ def create_session(db: Session, owner: User, package: RecordingPackage) -> Meeti
     )
     db.add(session)
     db.flush()
-    expires = now() + timedelta(hours=current_retention(db, settings).upload_hours)
+    _add_uploads(db, session, package)
+    audit.record(db, "session_created", actor_id=owner.id, target_type="session", target_id=session.id, metadata={"input_kind": session.input_kind})
+    db.flush()
+    return session
+
+
+def _add_uploads(db: Session, session: MeetingSession, package: RecordingPackage) -> None:
+    """完全WAV用tus行を一度だけ作る。live session昇格と通常作成で共有する。"""
+    existing = set(db.execute(select(Upload.track_id).where(Upload.session_id == session.id)).scalars())
+    expires = now() + timedelta(hours=current_retention(db, get_settings()).upload_hours)
     for track in package.tracks:
+        if track.track_id in existing:
+            continue
         db.add(
             Upload(
                 session_id=session.id,
@@ -129,9 +159,6 @@ def create_session(db: Session, owner: User, package: RecordingPackage) -> Meeti
                 expires_at=expires,
             )
         )
-    audit.record(db, "session_created", actor_id=owner.id, target_type="session", target_id=session.id, metadata={"input_kind": session.input_kind})
-    db.flush()
-    return session
 
 
 def serialize(db: Session, session: MeetingSession, viewer_id: uuid.UUID) -> dict[str, Any]:
@@ -334,7 +361,11 @@ def finalize(db: Session, session: MeetingSession, actor: User) -> MeetingSessio
         db.flush()
         session.finalized_at = now()
         session.audio_expires_at = now() + timedelta(days=current_retention(db, settings).audio_days)
-        enqueue_transcription(db, session)
+        # 録音中chunkが連続していれば、その完了を待って最終Transcriptへ結合する。
+        # 欠番・失敗時はsettle_live_sessionが完全WAVの従来jobへ戻す。
+        from minutes_api.reconciler import settle_live_session
+
+        settle_live_session(db, session)
         audit.record(db, "session_finalized", actor_id=actor.id, target_type="session", target_id=session.id)
         db.flush()
     except Exception:

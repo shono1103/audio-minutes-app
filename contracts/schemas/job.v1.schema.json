@@ -322,6 +322,16 @@
             "mixed",
             null
           ]
+        },
+        "live_chunk_sequence": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "録音中の先行文字起こしchunk。値がある結果は停止後にAPIが統合する"
+        },
+        "live_chunk_duration_ms": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 120000
         }
       }
     },
