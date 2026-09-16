@@ -49,6 +49,18 @@ final class RecordingPrimitivesTests: XCTestCase {
         XCTAssertEqual(sync.driftMs(elapsedHostTicks: 1_000, framesWritten: 16_160, sampleRate: 16_000), 10)
     }
 
+    func testMicrophoneConfigurationChangeStopsOnlyWhenSelectedDeviceDisappears() {
+        let selected = InputDevice(id: 1, uid: "selected", name: "選択中", isDefault: true)
+        let other = InputDevice(id: 2, uid: "other", name: "別のマイク", isDefault: false)
+
+        XCTAssertFalse(MicrophoneCapture.shouldStopAfterConfigurationChange(
+            selectedUID: selected.uid, availableDevices: [selected, other]
+        ))
+        XCTAssertTrue(MicrophoneCapture.shouldStopAfterConfigurationChange(
+            selectedUID: selected.uid, availableDevices: [other]
+        ))
+    }
+
     func testWavWriterFinalizesHeaderAndChecksum() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

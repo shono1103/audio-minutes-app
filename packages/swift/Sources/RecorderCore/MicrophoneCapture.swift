@@ -100,8 +100,12 @@ public final class MicrophoneCapture: @unchecked Sendable {
             self?.sink?.receive(buffer: buffer, hostTime: time.hostTime)
         }
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
-            // デバイス切断時は停止し、取得済みを保持する
-            self?.sink?.targetLost()
+            guard let self,
+                  Self.shouldStopAfterConfigurationChange(selectedUID: self.device.uid,
+                                                          availableDevices: InputDevices.list()) else { return }
+            // AVAudioEngine は開始直後にも通常の構成変更を通知する。選択した入力デバイスが
+            // 実際に利用不能になった場合だけ停止し、取得済みを保持する。
+            self.sink?.targetLost()
         }
         engine.prepare()
         do {
@@ -111,6 +115,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
             throw CaptureError.microphoneUnavailable("\(device.name): \(error.localizedDescription)")
         }
         isRunning = true
+    }
+
+    static func shouldStopAfterConfigurationChange(selectedUID: String, availableDevices: [InputDevice]) -> Bool {
+        !availableDevices.contains { $0.uid == selectedUID }
     }
 
     public func stop() {
