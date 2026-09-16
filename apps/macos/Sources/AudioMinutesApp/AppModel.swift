@@ -92,8 +92,8 @@ final class AppModel: ObservableObject {
     @Published var liveUploadedChunks = 0
     @Published var liveFailedChunks = 0
 
-    let settingsStore = SettingsStore()
-    let localStore = LocalSessionStore()
+    let settingsStore: SettingsStore
+    let localStore: LocalSessionStore
     let recorder: RecordingCoordinator
     let bridge: ChromeBridgeController
     private var auth: AuthManager?
@@ -112,18 +112,32 @@ final class AppModel: ObservableObject {
         return values?.volumeAvailableCapacityForImportantUsage ?? 0
     }
 
-    init() {
-        let loaded = (try? settingsStore.load()) ?? ClientSettings()
+    convenience init() {
+        self.init(paths: AppPaths(), startBackgroundServices: true)
+    }
+
+    /// テスト用の生成経路。一時ディレクトリ (`paths`) を使い、discovery/bridge/network の
+    /// バックグラウンド起動 (`startBackgroundServices: false`) を抑止して生成できる。
+    /// `init()` の通常起動はこの経路を `startBackgroundServices: true` で呼ぶだけで挙動を
+    /// 変えない。`configureCallbacks()` は常に実行するため、`recorder.onLevels` など本番と
+    /// 同じ callback 配線をテストから直接検証できる。
+    init(paths: AppPaths, startBackgroundServices: Bool) {
+        let store = SettingsStore(paths: paths)
+        let local = LocalSessionStore(paths: paths)
+        settingsStore = store
+        localStore = local
+        let loaded = (try? store.load()) ?? ClientSettings()
         settings = loaded
         languageMode = loaded.defaultLanguageMode
         allowExternalSend = loaded.claudeSendDefault
         selectedFormatID = loaded.defaultFormatProfileId
         chromeWholeApplicationExplicitlySelected = Self.restoredChromeWholeApplicationSelection(loaded.lastTarget)
-        recorder = RecordingCoordinator(store: localStore)
-        bridge = ChromeBridgeController(socketPath: settingsStore.paths.bridgeSocket.path)
-        try? settingsStore.paths.ensureDirectories()
+        recorder = RecordingCoordinator(store: local)
+        bridge = ChromeBridgeController(socketPath: store.paths.bridgeSocket.path)
+        try? store.paths.ensureDirectories()
         reloadLocalSessions()
         configureCallbacks()
+        guard startBackgroundServices else { return }
         configureClient()
         startDiscovery()
         startBridge()
