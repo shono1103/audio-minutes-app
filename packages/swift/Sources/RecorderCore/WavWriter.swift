@@ -142,11 +142,12 @@ public final class PCMDownmixer: @unchecked Sendable {
         let stride = Int(buffer.stride)
         guard frames > 0, channels > 0, stride > 0 else { return 0 }
         var sum: Double = 0
-        var sampleCount = 0
+        // 非有限 (NaN/Inf) サンプルは 0 として扱う。分母は常に frames * channels とし、
+        // 非有限サンプルを除外して分母を減らすことはしない (除外すると他サンプルの寄与を
+        // 相対的に大きく見せてしまう)。
         func accumulate(_ value: Double) {
             guard value.isFinite else { return }
             sum += value * value
-            sampleCount += 1
         }
         if let floats = buffer.floatChannelData {
             for channel in 0..<channels {
@@ -166,8 +167,7 @@ public final class PCMDownmixer: @unchecked Sendable {
         } else {
             return 0
         }
-        guard sampleCount > 0 else { return 0 }
-        let rms = (sum / Double(sampleCount)).squareRoot()
+        let rms = (sum / Double(frames * channels)).squareRoot()
         guard rms.isFinite else { return 0 }
         return Float(min(1, max(0, rms)))
     }
