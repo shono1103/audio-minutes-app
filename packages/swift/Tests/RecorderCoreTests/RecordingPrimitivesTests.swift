@@ -41,6 +41,16 @@ final class RecordingPrimitivesTests: XCTestCase {
         return value
     }
 
+    private func loudBuffer() -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        let value = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 64)!
+        value.frameLength = 64
+        if let data = value.floatChannelData?[0] {
+            for i in 0..<64 { data[i] = 0.5 }
+        }
+        return value
+    }
+
     func testClockOffsetsUseEarliestTrackAsOrigin() {
         let sync = ClockSync(nanosecondsPerTick: 1_000_000)
         let result = sync.offsets(firstHostTimes: ["app": 1_000, "microphone": 1_012])
@@ -138,6 +148,31 @@ final class RecordingPrimitivesTests: XCTestCase {
 
         XCTAssertNotNil(failure.read())
         XCTAssertEqual(writer.appendCalls, 0)
+    }
+
+    func testOnLevelFiresWithComputedRmsOnSuccessfulAppend() {
+        let writer = FaultWriter()
+        let track = TrackWriter(trackID: .appAudio, role: .app, writer: writer)
+        let levels = LockedBox<[Float]>([])
+        track.onLevel = { level in levels.update { $0.append(level) } }
+
+        track.receive(buffer: loudBuffer(), hostTime: 1)
+
+        XCTAssertEqual(levels.read().count, 1)
+        XCTAssertEqual(levels.read().first ?? -1, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(writer.appendCalls, 1)
+    }
+
+    func testOnLevelDoesNotFireWhenAppendFails() {
+        let writer = FaultWriter()
+        writer.appendError = CocoaError(.fileWriteOutOfSpace)
+        let track = TrackWriter(trackID: .appAudio, role: .app, writer: writer)
+        let levels = LockedBox<[Float]>([])
+        track.onLevel = { level in levels.update { $0.append(level) } }
+
+        track.receive(buffer: loudBuffer(), hostTime: 1)
+
+        XCTAssertTrue(levels.read().isEmpty, "append 失敗時に誤ったレベルを通知してはいけない")
     }
 
     func testOneTrackFinalizeFailureCanRetryWithoutRefinalizingSuccessfulTrack() throws {

@@ -220,7 +220,7 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
         guard lastError == nil else { lock.unlock(); return }
         if firstHostTime == nil { firstHostTime = hostTime }
         lastHostTime = hostTime
-        onLevel?(PCMDownmixer.rmsLevel(buffer))
+        let level = PCMDownmixer.rmsLevel(buffer)
         do {
             if downmixer == nil { downmixer = try makeDownmixer(buffer.format) }
             guard let downmixer else { throw WavError.converterUnavailable }
@@ -233,7 +233,9 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
                     onLiveChunkFailure?(error)
                 }
             }
+            let onLevel = onLevel
             lock.unlock()
+            onLevel?(level)
         } catch {
             lastError = error
             let callback = onFailure
@@ -285,6 +287,38 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
     }
 
     func targetLost() { onTargetLost?() }
+}
+
+/// app/mic 2 系統の入力レベルを世代付きで集約する。両系統は別々の capture callback スレッドから
+/// 並行に通知するため、読み書きはこの型の内部 lock で直列化する。世代は開始・停止・開始失敗の
+/// たびに進め、前世代の capture callback から遅延して届く通知を破棄できるようにする。
+final class LevelAggregator: @unchecked Sendable {
+    private var lastApp: Float = 0
+    private var lastMic: Float = 0
+    private var generation: Int = 0
+    private let lock = NSLock()
+
+    /// 新しい世代へ進め、値を 0 にリセットして新世代の識別子を返す。
+    @discardableResult
+    func reset() -> Int {
+        lock.withLock {
+            generation += 1
+            lastApp = 0
+            lastMic = 0
+            return generation
+        }
+    }
+
+    /// 通知元の世代が現世代と一致する場合のみ値を更新し、通知すべき最新の (app, mic) を返す。
+    /// 一致しない場合 (停止後や前世代からの遅延通知) は nil を返し、呼び出し側は外部通知を行わない。
+    func publish(app: Float?, mic: Float?, generation: Int) -> (app: Float, mic: Float)? {
+        lock.withLock {
+            guard generation == self.generation else { return nil }
+            if let app { lastApp = app }
+            if let mic { lastMic = mic }
+            return (lastApp, lastMic)
+        }
+    }
 }
 
 /// GUI が所有する録音の実行体。2 トラックを同期して保存し、録音パッケージを作る。
@@ -339,6 +373,7 @@ public final class RecordingCoordinator: @unchecked Sendable {
             startHostTime = mach_absolute_time()
             self.target = target
             self.options = options
+            let generation = resetLevels()
             let directory = try store.prepare(sessionID: sessionID)
             let chunkDirectory = directory.appendingPathComponent("chunks", isDirectory: true)
             let chunkReady: @Sendable (LiveAudioChunk) -> Void = { [weak self] chunk in self?.onLiveChunkReady?(chunk) }
@@ -352,8 +387,8 @@ public final class RecordingCoordinator: @unchecked Sendable {
             )
             appWriter = app
             micWriter = mic
-            app.onLevel = { [weak self] level in self?.publishLevels(app: level, mic: nil) }
-            mic.onLevel = { [weak self] level in self?.publishLevels(app: nil, mic: level) }
+            app.onLevel = { [weak self] level in self?.publishLevels(app: level, mic: nil, generation: generation) }
+            mic.onLevel = { [weak self] level in self?.publishLevels(app: nil, mic: level, generation: generation) }
             let lost: @Sendable () -> Void = { [weak self] in self?.handleTargetLost() }
             app.onTargetLost = lost
             mic.onTargetLost = lost
@@ -380,6 +415,7 @@ public final class RecordingCoordinator: @unchecked Sendable {
             microphone = micCapture
         } catch {
             teardownCaptures()
+            resetLevels()
             _ = lock.withLock { try? machine.transition(to: .failed) }
             try? store.remove(sessionID: sessionID)
             _ = lock.withLock { try? machine.transition(to: .idle) }
@@ -387,12 +423,19 @@ public final class RecordingCoordinator: @unchecked Sendable {
         }
     }
 
-    private var lastApp: Float = 0
-    private var lastMic: Float = 0
-    private func publishLevels(app: Float?, mic: Float?) {
-        if let app { lastApp = app }
-        if let mic { lastMic = mic }
-        onLevels?(lastApp, lastMic)
+    private let levels = LevelAggregator()
+
+    /// レベル集約を新しい世代へリセットし、UI へ 0 を通知する。開始・停止・開始失敗のたびに呼ぶ。
+    @discardableResult
+    private func resetLevels() -> Int {
+        let generation = levels.reset()
+        onLevels?(0, 0)
+        return generation
+    }
+
+    private func publishLevels(app: Float?, mic: Float?, generation: Int) {
+        guard let snapshot = levels.publish(app: app, mic: mic, generation: generation) else { return }
+        onLevels?(snapshot.app, snapshot.mic)
     }
 
     private func handleTargetLost() {
@@ -420,6 +463,7 @@ public final class RecordingCoordinator: @unchecked Sendable {
     public func stop() throws -> LocalSessionState {
         try lock.withLock { try machine.transition(to: .finalizing) }
         teardownCaptures()
+        resetLevels()
         guard let appWriter, let micWriter, let target else {
             _ = lock.withLock { try? machine.transition(to: .failed) }
             throw RecordingError.notRecording
