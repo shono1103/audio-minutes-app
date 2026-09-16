@@ -175,6 +175,26 @@ final class RecordingPrimitivesTests: XCTestCase {
         XCTAssertTrue(levels.read().isEmpty, "append 失敗時に誤ったレベルを通知してはいけない")
     }
 
+    /// onLevel は TrackWriter 自身の lock を解放した後に呼ぶため、callback から同じ track の
+    /// finalize() へ再入しても NSLock (非再帰) でデッドロックしないことを確認する。
+    /// lock 内で onLevel を呼ぶ実装に戻すと、この呼び出しは timeout してテストが失敗する。
+    func testOnLevelCanReentrantlyCallFinalizeWithoutDeadlock() {
+        let writer = FaultWriter()
+        let track = TrackWriter(trackID: .appAudio, role: .app, writer: writer)
+        let reentered = expectation(description: "onLevel から finalize への再入がデッドロックしない")
+        track.onLevel = { _ in
+            _ = try? track.finalize()
+            reentered.fulfill()
+        }
+
+        DispatchQueue.global().async {
+            track.receive(buffer: self.loudBuffer(), hostTime: 1)
+        }
+
+        wait(for: [reentered], timeout: 2.0)
+        XCTAssertEqual(writer.finalizeCalls, 1)
+    }
+
     func testOneTrackFinalizeFailureCanRetryWithoutRefinalizingSuccessfulTrack() throws {
         let healthy = FaultWriter()
         let faulty = FaultWriter()
