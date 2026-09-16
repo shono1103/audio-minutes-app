@@ -33,8 +33,10 @@ final class ContractCodingTests: XCTestCase {
     }
 
     func testClaudeAuthURLRequiresOfficialHTTPSOriginAndDefaultPort() {
+        XCTAssertTrue(SessionService.isAllowedClaudeAuthURL("https://claude.com/oauth/authorize"))
         XCTAssertTrue(SessionService.isAllowedClaudeAuthURL("https://claude.ai/login"))
         XCTAssertTrue(SessionService.isAllowedClaudeAuthURL("https://claude.ai:443/login"))
+        XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://claude.com.evil.example/login"))
         XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://claude.ai:8443/login"))
         XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://user@claude.ai/login"))
         XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://example.test/login"))

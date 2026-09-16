@@ -75,7 +75,7 @@ def test_login_url_ready_then_completed_and_url_not_logged(claude_home, clean_en
     assert adapter.status().state == "login_pending"
     wait_for(lambda: session.state == "url_ready")
     public = session.public()
-    assert public["url"].startswith("https://claude.ai/oauth/authorize")
+    assert public["url"].startswith("https://claude.com/oauth/authorize")
     assert "MOCK-STATE-SECRET" in public["url"]
     with pytest.raises(LoginInProgress):
         adapter.login()
@@ -96,6 +96,14 @@ def test_login_bad_origin_fails(claude_home, clean_environ, caplog):
     assert session.failure_code == "claude_cli_incompatible"
     assert "url" not in session.public()
     assert "evil.example.com" not in caplog.text
+
+
+def test_login_url_allowlist_requires_exact_official_origin(claude_home, clean_environ):
+    adapter = make_adapter(claude_home, clean_environ, "logged_out")
+    assert adapter._url_allowed("https://claude.com/oauth/authorize")
+    assert not adapter._url_allowed("https://claude.com.evil.example/oauth/authorize")
+    assert not adapter._url_allowed("https://user@claude.com/oauth/authorize")
+    assert not adapter._url_allowed("https://claude.com:8443/oauth/authorize")
 
 
 def test_login_cancel(claude_home, clean_environ):

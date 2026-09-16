@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code CLI の対応表。ここに無い版では推測した認証・生成フローを実行しない (FR-132)。2026-09-12 にホストの 2.1.268 で実出力を確認した。",
+  "_comment": "Claude Code CLI の対応表。ここに無い版では推測した認証・生成フローを実行しない (FR-132)。2026-09-16 にホストの 2.1.268 で実出力を確認した。",
   "supported_versions": ["2.1.268"],
   "version_args": ["--version"],
   "version_pattern": "^(\\d+\\.\\d+\\.\\d+)",
@@ -18,7 +18,7 @@
     "login_args": ["auth", "login", "--claudeai"],
     "logout_args": ["auth", "logout"],
     "url_presentation": "login コマンドが標準出力へ https URL を含む行を出す。URL は 1 行内に収まる",
-    "url_allowlist_origins": ["https://claude.ai/", "https://console.anthropic.com/", "https://platform.claude.com/"],
+    "url_allowlist_origins": ["https://claude.com/", "https://claude.ai/", "https://console.anthropic.com/", "https://platform.claude.com/"],
     "login_accepts_code_on_stdin": true
   },
   "generate": {

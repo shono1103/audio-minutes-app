@@ -78,7 +78,7 @@ def cmd_auth(args: list[str]) -> int:
         print("Browser didn't open? Use the url below to sign in:")
         print()
         print(
-            "https://claude.ai/oauth/authorize?code=true&client_id=mock-client&response_type=code"
+            "https://claude.com/oauth/authorize?code=true&client_id=mock-client&response_type=code"
             "&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback&scope=user%3Ainference"
             "&state=MOCK-STATE-SECRET-0001"
         )

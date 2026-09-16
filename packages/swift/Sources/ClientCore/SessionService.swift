@@ -282,7 +282,7 @@ public final class SessionService: @unchecked Sendable {
     public func claudeLogout() async throws -> ClaudeStatus { try await client.post("/v1/admin/claude/logout") }
 
     /// Anthropic 公式 origin の allowlist。一致しない URL は表示しない (FR-124)。
-    public static let claudeAuthOrigins: Set<String> = ["https://claude.ai", "https://console.anthropic.com", "https://platform.claude.com"]
+    public static let claudeAuthOrigins: Set<String> = ["https://claude.com", "https://claude.ai", "https://console.anthropic.com", "https://platform.claude.com"]
 
     public static func isAllowedClaudeAuthURL(_ raw: String) -> Bool {
         guard let url = URL(string: raw),
