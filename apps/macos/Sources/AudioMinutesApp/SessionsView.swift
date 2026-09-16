@@ -199,13 +199,24 @@ private struct SessionDetailView: View {
     private func time(_ milliseconds: Int) -> String { String(format: "%02d:%02d", milliseconds / 60_000, milliseconds / 1_000 % 60) }
 }
 
-private struct AudioPlaybackView: View {
-    @State private var player: AVPlayer
+private struct AudioPlaybackView: NSViewRepresentable {
+    let url: URL
 
-    init(url: URL) { _player = State(initialValue: AVPlayer(url: url)) }
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .inline
+        view.player = AVPlayer(url: url)
+        return view
+    }
 
-    var body: some View {
-        VideoPlayer(player: player)
-            .onDisappear { player.pause() }
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        guard (view.player?.currentItem?.asset as? AVURLAsset)?.url != url else { return }
+        view.player?.pause()
+        view.player = AVPlayer(url: url)
+    }
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: Void) {
+        view.player?.pause()
+        view.player = nil
     }
 }
