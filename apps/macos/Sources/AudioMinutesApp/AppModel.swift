@@ -23,6 +23,27 @@ enum RecordingStopSequence {
     }
 }
 
+/// `RecordingCoordinator.onLevels` の通知を1箇所で適用し、古い sequence の通知による
+/// 上書きを防ぐ。app/mic は別々の capture callback スレッドから MainActor 上へ非同期
+/// (Task) で届くため、Task の実行順序は発火順序と一致するとは限らない。sequence は
+/// 発火のたびに単調増加するため、既に適用した値以下の sequence を無視するだけで、
+/// 順序の入れ替わりや録音停止後の遅延通知を安全に破棄できる。
+struct LevelApplier {
+    private(set) var lastSequence = 0
+    private(set) var app: Float = 0
+    private(set) var mic: Float = 0
+
+    /// sequence が既に適用済みの値以下なら無視する。適用した場合のみ true を返す。
+    @discardableResult
+    mutating func apply(app: Float, mic: Float, sequence: Int) -> Bool {
+        guard sequence > lastSequence else { return false }
+        lastSequence = sequence
+        self.app = app
+        self.mic = mic
+        return true
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     enum Pane: String, CaseIterable, Identifiable { case recording = "録音・取り込み", sessions = "セッション", settings = "設定"; var id: String { rawValue } }
@@ -82,6 +103,7 @@ final class AppModel: ObservableObject {
     private var elapsedTimer: Timer?
     private var lastStatuses: [UUID: SessionStatus] = [:]
     private var liveUploaders: [UUID: LiveChunkUploadCoordinator] = [:]
+    private var levelApplier = LevelApplier()
 
     var recordingState: RecordingState { recorder.state }
     var isRecording: Bool { recorder.state == .recording || recorder.state == .finalizing }
@@ -109,7 +131,11 @@ final class AppModel: ObservableObject {
     }
 
     private func configureCallbacks() {
-        recorder.onLevels = { [weak self] app, mic in Task { @MainActor in self?.appLevel = app; self?.micLevel = mic } }
+        recorder.onLevels = { [weak self] app, mic, sequence in Task { @MainActor in
+            guard let self, self.levelApplier.apply(app: app, mic: mic, sequence: sequence) else { return }
+            self.appLevel = self.levelApplier.app
+            self.micLevel = self.levelApplier.mic
+        } }
         recorder.onStoppedByTargetLoss = { [weak self] result in Task { @MainActor in
             guard let self else { return }
             self.elapsedTimer?.invalidate()

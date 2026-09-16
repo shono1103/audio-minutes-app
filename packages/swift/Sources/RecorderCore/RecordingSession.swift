@@ -289,34 +289,48 @@ final class TrackWriter: AudioChunkSink, @unchecked Sendable {
     func targetLost() { onTargetLost?() }
 }
 
-/// app/mic 2 系統の入力レベルを世代付きで集約する。両系統は別々の capture callback スレッドから
-/// 並行に通知するため、読み書きはこの型の内部 lock で直列化する。世代は開始・停止・開始失敗の
-/// たびに進め、前世代の capture callback から遅延して届く通知を破棄できるようにする。
+/// app/mic 2 系統の入力レベルを世代・単調増加 sequence 付きで集約する。両系統は別々の
+/// capture callback スレッドから並行に通知するため、読み書きはこの型の内部 lock で直列化
+/// する。`sequence` は reset/publish のたびに必ず増加し、世代をまたいでも巻き戻らない。
+/// 呼び出し側の callback 発火順序が入れ替わっても、受信側が sequence の単調増加だけを見て
+/// 「自分より新しい値を上書きしない」判定をできるようにするための値であり、呼び出し側は
+/// lock を保持したまま外部 callback を呼ぶ必要がない。
 final class LevelAggregator: @unchecked Sendable {
+    struct Snapshot: Sendable {
+        var app: Float
+        var mic: Float
+        var generation: Int
+        var sequence: Int
+    }
+
     private var lastApp: Float = 0
     private var lastMic: Float = 0
     private var generation: Int = 0
+    private var sequence: Int = 0
     private let lock = NSLock()
 
-    /// 新しい世代へ進め、値を 0 にリセットして新世代の識別子を返す。
+    /// 新しい世代へ進め、値を 0 にリセットした snapshot を返す。
     @discardableResult
-    func reset() -> Int {
+    func reset() -> Snapshot {
         lock.withLock {
             generation += 1
             lastApp = 0
             lastMic = 0
-            return generation
+            sequence += 1
+            return Snapshot(app: 0, mic: 0, generation: generation, sequence: sequence)
         }
     }
 
-    /// 通知元の世代が現世代と一致する場合のみ値を更新し、通知すべき最新の (app, mic) を返す。
-    /// 一致しない場合 (停止後や前世代からの遅延通知) は nil を返し、呼び出し側は外部通知を行わない。
-    func publish(app: Float?, mic: Float?, generation: Int) -> (app: Float, mic: Float)? {
+    /// 通知元の世代が現世代と一致する場合のみ値を更新し、単調増加 sequence を持つ snapshot を
+    /// 返す。一致しない場合 (停止後や前世代からの遅延通知) は nil を返し、呼び出し側は外部
+    /// 通知を行わない。
+    func publish(app: Float?, mic: Float?, generation: Int) -> Snapshot? {
         lock.withLock {
             guard generation == self.generation else { return nil }
             if let app { lastApp = app }
             if let mic { lastMic = mic }
-            return (lastApp, lastMic)
+            sequence += 1
+            return Snapshot(app: lastApp, mic: lastMic, generation: generation, sequence: sequence)
         }
     }
 }
@@ -343,7 +357,10 @@ public final class RecordingCoordinator: @unchecked Sendable {
     private let failureQueue = DispatchQueue(label: "dev.audio-minutes.recording-failure")
     private var failureStopScheduled = false
 
-    public var onLevels: (@Sendable (_ app: Float, _ mic: Float) -> Void)?
+    /// `sequence` は呼び出しのたびに必ず増加する。受信側は自分が既に適用した値より小さい
+    /// (または同じ) sequence の通知を無視することで、callback 発火順序の入れ替わりや
+    /// 停止後の遅延通知による古い値の上書きを避けられる。
+    public var onLevels: (@Sendable (_ app: Float, _ mic: Float, _ sequence: Int) -> Void)?
     public var onStoppedByTargetLoss: (@Sendable (AutomaticRecordingStop) -> Void)?
     public var onStoppedByTrackFailure: (@Sendable (String) -> Void)?
     public var onLiveChunkReady: (@Sendable (LiveAudioChunk) -> Void)?
@@ -425,17 +442,18 @@ public final class RecordingCoordinator: @unchecked Sendable {
 
     private let levels = LevelAggregator()
 
-    /// レベル集約を新しい世代へリセットし、UI へ 0 を通知する。開始・停止・開始失敗のたびに呼ぶ。
+    /// レベル集約を新しい世代へリセットし、UI へ 0 を sequence 付きで通知する。
+    /// 開始・停止・開始失敗のたびに呼ぶ。戻り値は以後の通知が捕捉すべき世代識別子。
     @discardableResult
     private func resetLevels() -> Int {
-        let generation = levels.reset()
-        onLevels?(0, 0)
-        return generation
+        let snapshot = levels.reset()
+        onLevels?(snapshot.app, snapshot.mic, snapshot.sequence)
+        return snapshot.generation
     }
 
     private func publishLevels(app: Float?, mic: Float?, generation: Int) {
         guard let snapshot = levels.publish(app: app, mic: mic, generation: generation) else { return }
-        onLevels?(snapshot.app, snapshot.mic)
+        onLevels?(snapshot.app, snapshot.mic, snapshot.sequence)
     }
 
     private func handleTargetLost() {
