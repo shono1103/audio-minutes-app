@@ -85,8 +85,8 @@ struct RecordingView: View {
                 }
 
                 Section("入力レベル") {
-                    LabeledContent("アプリ音声") { ProgressView(value: Double(model.appLevel), total: 1).frame(width: 240) }
-                    LabeledContent("マイク") { ProgressView(value: Double(model.micLevel), total: 1).frame(width: 240) }
+                    LabeledContent("アプリ音声") { ProgressView(value: Double(model.appLevel), total: 1).progressViewStyle(.linear).frame(width: 240) }
+                    LabeledContent("マイク") { ProgressView(value: Double(model.micLevel), total: 1).progressViewStyle(.linear).frame(width: 240) }
                     if model.isRecording {
                         Label("録音中 \(duration(model.elapsed)) — 入力元と処理先は固定されています", systemImage: "record.circle.fill")
                             .foregroundStyle(.red).accessibilityLabel("録音中、経過時間 \(duration(model.elapsed))")
