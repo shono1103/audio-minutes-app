@@ -104,6 +104,9 @@ final class AppModel: ObservableObject {
     private var lastStatuses: [UUID: SessionStatus] = [:]
     private var liveUploaders: [UUID: LiveChunkUploadCoordinator] = [:]
     private var levelApplier = LevelApplier()
+    /// テスト専用の配送完了 hook。`recorder.onLevels` が積む MainActor Task が
+    /// 適用・拒否のいずれで終わっても最後に呼ばれる。本番では未設定 (nil) のまま。
+    var onLevelsHandled: (() -> Void)?
 
     var recordingState: RecordingState { recorder.state }
     var isRecording: Bool { recorder.state == .recording || recorder.state == .finalizing }
@@ -146,7 +149,9 @@ final class AppModel: ObservableObject {
 
     private func configureCallbacks() {
         recorder.onLevels = { [weak self] app, mic, sequence in Task { @MainActor in
-            guard let self, self.levelApplier.apply(app: app, mic: mic, sequence: sequence) else { return }
+            guard let self else { return }
+            defer { self.onLevelsHandled?() }
+            guard self.levelApplier.apply(app: app, mic: mic, sequence: sequence) else { return }
             self.appLevel = self.levelApplier.app
             self.micLevel = self.levelApplier.mic
         } }
