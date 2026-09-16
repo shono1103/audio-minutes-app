@@ -134,22 +134,41 @@ public final class PCMDownmixer: @unchecked Sendable {
         return output
     }
 
-    /// 入力レベル (RMS、0.0〜1.0)。GUI のレベルメーター用。
+    /// 入力レベル (RMS、0.0〜1.0)。GUI のレベルメーター用。全チャンネル・全フレームを
+    /// `stride` (interleaved ならチャンネル数、non-interleaved なら 1) に従って読む。
     public static func rmsLevel(_ buffer: AVAudioPCMBuffer) -> Float {
         let frames = Int(buffer.frameLength)
-        guard frames > 0 else { return 0 }
+        let channels = Int(buffer.format.channelCount)
+        let stride = Int(buffer.stride)
+        guard frames > 0, channels > 0, stride > 0 else { return 0 }
+        var sum: Double = 0
+        var sampleCount = 0
+        func accumulate(_ value: Double) {
+            guard value.isFinite else { return }
+            sum += value * value
+            sampleCount += 1
+        }
         if let floats = buffer.floatChannelData {
-            var sum: Float = 0
-            for channel in 0..<Int(buffer.format.channelCount) {
-                for index in 0..<frames { let value = floats[channel][index]; sum += value * value }
+            for channel in 0..<channels {
+                let data = floats[channel]
+                for frame in 0..<frames { accumulate(Double(data[frame * stride])) }
             }
-            return min(1, sqrt(sum / Float(frames * Int(buffer.format.channelCount))))
+        } else if let ints16 = buffer.int16ChannelData {
+            for channel in 0..<channels {
+                let data = ints16[channel]
+                for frame in 0..<frames { accumulate(Double(data[frame * stride]) / 32768) }
+            }
+        } else if let ints32 = buffer.int32ChannelData {
+            for channel in 0..<channels {
+                let data = ints32[channel]
+                for frame in 0..<frames { accumulate(Double(data[frame * stride]) / 2147483648) }
+            }
+        } else {
+            return 0
         }
-        if let ints = buffer.int16ChannelData {
-            var sum: Float = 0
-            for index in 0..<frames { let value = Float(ints[0][index]) / 32768; sum += value * value }
-            return min(1, sqrt(sum / Float(frames)))
-        }
-        return 0
+        guard sampleCount > 0 else { return 0 }
+        let rms = (sum / Double(sampleCount)).squareRoot()
+        guard rms.isFinite else { return 0 }
+        return Float(min(1, max(0, rms)))
     }
 }
