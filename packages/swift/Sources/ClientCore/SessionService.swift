@@ -285,7 +285,12 @@ public final class SessionService: @unchecked Sendable {
     public static let claudeAuthOrigins: Set<String> = ["https://claude.ai", "https://console.anthropic.com", "https://platform.claude.com"]
 
     public static func isAllowedClaudeAuthURL(_ raw: String) -> Bool {
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        guard let url = URL(string: raw),
+              url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              url.user == nil,
+              url.password == nil,
+              url.port == nil || url.port == 443 else { return false }
         return claudeAuthOrigins.contains("https://\(host)")
     }
 }

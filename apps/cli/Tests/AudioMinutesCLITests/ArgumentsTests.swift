@@ -31,6 +31,26 @@ final class ArgumentsTests: XCTestCase {
         XCTAssertEqual(CLI.exitCode(for: APIClientError.transport("offline")), 5)
     }
 
+    func testClaudeLoginRequiresNonJSONInteractiveTerminalBeforeStarting() throws {
+        XCTAssertNoThrow(try CLI.validateClaudeLoginInvocation(json: false, isTerminal: true))
+        XCTAssertThrowsError(try CLI.validateClaudeLoginInvocation(json: true, isTerminal: true)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("--json"))
+        }
+        XCTAssertThrowsError(try CLI.validateClaudeLoginInvocation(json: false, isTerminal: false)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("対話terminal"))
+        }
+    }
+
+    func testClaudeLoginURLIsShownOnlyForNonJSONInteractiveTerminalAfterAllowlistValidation() throws {
+        let allowed = "https://claude.ai/login"
+        XCTAssertEqual(try CLI.claudeLoginURLForTerminal(allowed, json: false, isTerminal: true), allowed)
+        XCTAssertNil(try CLI.claudeLoginURLForTerminal(allowed, json: true, isTerminal: false))
+        XCTAssertNil(try CLI.claudeLoginURLForTerminal(nil, json: false, isTerminal: false))
+        XCTAssertThrowsError(try CLI.claudeLoginURLForTerminal(allowed, json: false, isTerminal: false))
+        XCTAssertThrowsError(try CLI.claudeLoginURLForTerminal("https://example.test/login", json: false, isTerminal: true))
+        XCTAssertThrowsError(try CLI.claudeLoginURLForTerminal("https://claude.ai:8443/login", json: false, isTerminal: true))
+    }
+
     func testImportUsesClaudeSendDefaultUnlessExplicitlyOverridden() throws {
         var disabledByDefault = ClientSettings()
         disabledByDefault.claudeSendDefault = false

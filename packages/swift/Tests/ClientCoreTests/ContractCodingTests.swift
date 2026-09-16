@@ -32,6 +32,14 @@ final class ContractCodingTests: XCTestCase {
         XCTAssertFalse(service.isAllowedServerBrowserURL("https://evil.example/auth/account/passkeys/token"))
     }
 
+    func testClaudeAuthURLRequiresOfficialHTTPSOriginAndDefaultPort() {
+        XCTAssertTrue(SessionService.isAllowedClaudeAuthURL("https://claude.ai/login"))
+        XCTAssertTrue(SessionService.isAllowedClaudeAuthURL("https://claude.ai:443/login"))
+        XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://claude.ai:8443/login"))
+        XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://user@claude.ai/login"))
+        XCTAssertFalse(SessionService.isAllowedClaudeAuthURL("https://example.test/login"))
+    }
+
     func testAudioExportExtensionUsesResponseMetadata() {
         XCTAssertEqual(SessionService.audioFileExtension(.init(status: 200, headers: ["Content-Type": "audio/mpeg"], body: Data())), "mp3")
         XCTAssertEqual(SessionService.audioFileExtension(.init(status: 200, headers: ["Content-Disposition": "attachment; filename=track.flac"], body: Data())), "flac")

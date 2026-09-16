@@ -628,19 +628,19 @@ final class AppModel: ObservableObject {
             var login = try await service.claudeLogin()
             claudeLoginSession = login
             message = "Claudeログインを開始しました。URLが準備できるまで状態を更新します"
-            var openedURL = false
+            var announcedURL = false
             for _ in 0..<360 {
                 var next = try await service.claudeLoginStatus(login.authSessionId)
                 if next.url == nil { next.url = login.url }
                 login = next
                 claudeLoginSession = login
-                if login.state == "url_ready", let raw = login.url, !openedURL {
-                    guard SessionService.isAllowedClaudeAuthURL(raw), let url = URL(string: raw) else {
+                if login.state == "url_ready", let raw = login.url, !announcedURL {
+                    guard SessionService.isAllowedClaudeAuthURL(raw) else {
                         _ = try? await service.claudeCancelLogin(login.authSessionId)
                         throw AuthError.reauthFailed("Claude認証URLのoriginが許可されていません")
                     }
-                    openedURL = true
-                    _ = NSWorkspace.shared.open(url); message = "公式Claude認証画面を開きました。terminalの完了を待っています"
+                    announcedURL = true
+                    message = "Claude認証URLを表示しました。本人が「認証画面を開く」または「URLをコピー」を選んでください"
                 }
                 if ["completed", "failed", "cancelled", "expired"].contains(login.state) { break }
                 try await Task.sleep(for: .seconds(1))

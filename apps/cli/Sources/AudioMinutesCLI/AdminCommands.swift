@@ -1,6 +1,7 @@
-import ClientCore
-import Foundation
 import AppKit
+import ClientCore
+import Darwin
+import Foundation
 
 extension CLI {
     func runClaude(_ raw: [String], service: SessionService) async throws {
@@ -11,18 +12,23 @@ extension CLI {
         switch command {
         case "status": try output(try await service.claudeStatus()) { "\($0.state)\t\($0.cliVersion ?? "unknown")\t\($0.label)" }
         case "login":
+            let isTerminal = Self.standardOutputIsTerminal()
+            try Self.validateClaudeLoginInvocation(json: json, isTerminal: isTerminal)
             var value = try await service.claudeLogin()
-            var openedURL = false
+            var displayedURL = false
             do {
                 for _ in 0..<360 {
-                    if value.state == "url_ready", let raw = value.url, !openedURL {
-                        guard SessionService.isAllowedClaudeAuthURL(raw), let url = URL(string: raw) else {
+                    if value.state == "url_ready", let raw = value.url, !displayedURL {
+                        do {
+                            if let url = try Self.claudeLoginURLForTerminal(raw, json: json, isTerminal: isTerminal) {
+                                print("認証URL\t\(url)")
+                                print("本人が認証画面を開いてください。必要なら別terminalで `audio-minutes claude submit-code \(value.authSessionId) --code CODE` を実行してください")
+                            }
+                        } catch {
                             _ = try? await service.claudeCancelLogin(value.authSessionId)
-                            throw CLIError.invalidInput("Claude 認証 URL の origin が許可されていません")
+                            throw error
                         }
-                        openedURL = true
-                        _ = await MainActor.run { NSWorkspace.shared.open(url) }
-                        if !json { print("認証完了を待っています。必要なら別terminalで `audio-minutes claude submit-code \(value.authSessionId) --code CODE` を実行してください") }
+                        displayedURL = true
                     }
                     if ["completed", "failed", "cancelled", "expired"].contains(value.state) { break }
                     try await Task.sleep(for: .seconds(1))
@@ -37,8 +43,18 @@ extension CLI {
                 throw AuthError.timeout
             }
             guard value.state == "completed" else { throw CLIError.invalidInput("Claude login \(value.state): \(value.failureCode ?? "詳細なし")") }
+            // 認証 URL は対話中の非 JSON 表示に限定し、機械可読出力には含めない。
+            value.url = nil
             try output(value) { $0.state }
-        case "login-status": try output(try await service.claudeLoginStatus(args.positionals[0])) { "\($0.state)\($0.url.map { "\n\($0)" } ?? "")" }
+        case "login-status":
+            var value = try await service.claudeLoginStatus(args.positionals[0])
+            let displayURL = try Self.claudeLoginURLForTerminal(
+                value.url,
+                json: json,
+                isTerminal: Self.standardOutputIsTerminal()
+            )
+            if json { value.url = nil }
+            try output(value) { "\($0.state)\(displayURL.map { "\n\($0)" } ?? "")" }
         case "submit-code":
             guard let code = args.value("--code"), !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CLIError.usage("--code が必要です") }
             try output(try await service.claudeSubmitLoginCode(args.positionals[0], code: code)) { $0.state }
@@ -46,6 +62,31 @@ extension CLI {
         case "logout": try output(try await service.claudeLogout()) { $0.state }
         default: throw CLIError.usage("claude {status|login|login-status ID|submit-code ID --code CODE|cancel ID|logout}")
         }
+    }
+
+    static func standardOutputIsTerminal() -> Bool {
+        isatty(STDOUT_FILENO) == 1
+    }
+
+    static func validateClaudeLoginInvocation(json: Bool, isTerminal: Bool) throws {
+        guard !json else {
+            throw CLIError.usage("claude login は対話専用のため --json では実行できません")
+        }
+        guard isTerminal else {
+            throw CLIError.invalidInput("claude login は認証URLを安全に表示できる対話terminalで実行してください")
+        }
+    }
+
+    static func claudeLoginURLForTerminal(_ raw: String?, json: Bool, isTerminal: Bool) throws -> String? {
+        guard let raw else { return nil }
+        guard SessionService.isAllowedClaudeAuthURL(raw) else {
+            throw CLIError.invalidInput("Claude 認証 URL の origin が許可されていません")
+        }
+        if json { return nil }
+        guard isTerminal else {
+            throw CLIError.invalidInput("Claude 認証 URL は対話terminalにだけ表示できます")
+        }
+        return raw
     }
 
     func runAccount(_ raw: [String], service: SessionService) async throws {

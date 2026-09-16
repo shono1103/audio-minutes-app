@@ -156,7 +156,7 @@ struct SettingsView: View {
                             Button("取消") { Task { await model.cancelClaudeLogin() } }
                         }
                     }
-                    Text("認証URLは公式originを検証した場合だけシステムブラウザーで開きます。API keyとの競合時は処理しません。")
+                    Text("認証URLは公式originを検証して一時表示し、明示操作時だけブラウザーまたはクリップボードへ渡します。API keyとの競合時は処理しません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("管理操作の再認証") {
