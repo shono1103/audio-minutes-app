@@ -7,7 +7,7 @@ struct SessionsView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             List(model.sessions, selection: Binding(get: { model.selectedSession?.id }, set: { id in
                 if let session = model.sessions.first(where: { $0.id == id }) { Task { await model.showSession(session) } }
             })) { session in
@@ -19,13 +19,16 @@ struct SessionsView: View {
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
             }
-            .frame(minWidth: 240, idealWidth: 280, maxWidth: 340)
+            .frame(width: 300)
+            .frame(maxHeight: .infinity, alignment: .top)
+            Divider()
             if model.selectedSession != nil {
                 SessionDetailView(model: model)
-                    .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
-                    .layoutPriority(1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ContentUnavailableView("セッションを選択", systemImage: "doc.text.magnifyingglass")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            else { ContentUnavailableView("セッションを選択", systemImage: "doc.text.magnifyingglass") }
         }
         .navigationTitle("セッション")
     }
