@@ -52,9 +52,54 @@ final class TrackWriterIntegrationTests: XCTestCase {
         return buffer
     }
 
-    private func containsNonZeroByte(_ url: URL) throws -> Bool {
-        let data = try Data(contentsOf: url)
-        return data.contains { $0 != 0 }
+    // MARK: - WAV 実データ検証
+    //
+    // WavWriter は常に固定44byteのRIFF/WAVE/fmt/dataヘッダーを書く (WavWriter.header 参照)。
+    // ファイル全体に非ゼロbyteがあるかどうかの判定は、PCMが全て無音でもRIFF/WAVEの文字列
+    // 部分で true になってしまい保存音声の破損を検出できない。ここではheaderをスキップして
+    // 実際のPCM16サンプルをdecodeし、その値・RMSとfmtチャンクの形式を検証する。
+
+    private enum WavInspectionError: Error { case tooShort }
+
+    private struct WavInspection {
+        var audioFormat: UInt16
+        var channels: UInt16
+        var sampleRate: UInt32
+        var bitsPerSample: UInt16
+        var dataByteCount: UInt32
+        var pcm16: [Int16]
+    }
+
+    private func readUInt16LE(_ bytes: [UInt8], _ offset: Int) -> UInt16 {
+        UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
+    }
+
+    private func readUInt32LE(_ bytes: [UInt8], _ offset: Int) -> UInt32 {
+        UInt32(bytes[offset]) | (UInt32(bytes[offset + 1]) << 8)
+            | (UInt32(bytes[offset + 2]) << 16) | (UInt32(bytes[offset + 3]) << 24)
+    }
+
+    private func inspectWav(_ url: URL) throws -> WavInspection {
+        let bytes = [UInt8](try Data(contentsOf: url))
+        guard bytes.count >= 44 else { throw WavInspectionError.tooShort }
+        var pcm16: [Int16] = []
+        pcm16.reserveCapacity((bytes.count - 44) / 2)
+        var offset = 44
+        while offset + 1 < bytes.count {
+            pcm16.append(Int16(bitPattern: readUInt16LE(bytes, offset)))
+            offset += 2
+        }
+        return WavInspection(
+            audioFormat: readUInt16LE(bytes, 20), channels: readUInt16LE(bytes, 22),
+            sampleRate: readUInt32LE(bytes, 24), bitsPerSample: readUInt16LE(bytes, 34),
+            dataByteCount: readUInt32LE(bytes, 40), pcm16: pcm16
+        )
+    }
+
+    private func rms(of samples: [Int16]) -> Double {
+        guard !samples.isEmpty else { return 0 }
+        let sum = samples.reduce(0.0) { $0 + Double($1) * Double($1) }
+        return (sum / Double(samples.count)).squareRoot()
     }
 
     func testStereoFloat32AppAudioProducesNonZeroLevelAndValidWav() throws {
@@ -77,12 +122,20 @@ final class TrackWriterIntegrationTests: XCTestCase {
         XCTAssertGreaterThan(result.byteSize, 44, "PCMデータが書き込まれている")
         let framesWritten = (result.byteSize - 44) / 2
         XCTAssertLessThanOrEqual(abs(Int((Double(framesWritten) * 1000 / 16_000).rounded()) - result.durationMs), 1, "byteSizeとdurationMsは同じframe数から一貫して算出される")
-        XCTAssertTrue(try containsNonZeroByte(url), "変換後の保存 PCM が無音のままではいけない")
 
         let data = try Data(contentsOf: url)
         XCTAssertEqual(String(decoding: data.prefix(4), as: UTF8.self), "RIFF")
         XCTAssertEqual(String(decoding: data[8..<12], as: UTF8.self), "WAVE")
         XCTAssertEqual(try WavWriter.sha256(of: url), result.sha256)
+
+        let inspection = try inspectWav(url)
+        XCTAssertEqual(inspection.audioFormat, 1, "PCM (非圧縮)")
+        XCTAssertEqual(inspection.channels, 1)
+        XCTAssertEqual(inspection.sampleRate, 16_000)
+        XCTAssertEqual(inspection.bitsPerSample, 16)
+        XCTAssertEqual(inspection.dataByteCount, UInt32(result.byteSize - 44))
+        XCTAssertEqual(inspection.pcm16.count, framesWritten)
+        XCTAssertGreaterThan(rms(of: inspection.pcm16), 0, "変換後の保存 PCM サンプル自体が無音のままではいけない")
     }
 
     func testChromeLikeMonoInt16ProducesNonZeroLevelAndValidWav() throws {
@@ -100,8 +153,34 @@ final class TrackWriterIntegrationTests: XCTestCase {
 
         let result = try track.finalize()
         XCTAssertEqual(result.durationMs, 1_000)
-        XCTAssertTrue(try containsNonZeroByte(url))
         XCTAssertEqual(try WavWriter.sha256(of: url), result.sha256)
+
+        let inspection = try inspectWav(url)
+        XCTAssertEqual(inspection.audioFormat, 1)
+        XCTAssertEqual(inspection.channels, 1)
+        XCTAssertEqual(inspection.sampleRate, 16_000)
+        XCTAssertEqual(inspection.bitsPerSample, 16)
+        XCTAssertEqual(inspection.dataByteCount, UInt32(result.byteSize - 44))
+        XCTAssertEqual(inspection.pcm16.count, 16_000)
+        XCTAssertGreaterThan(rms(of: inspection.pcm16), 0, "変換後の保存 PCM サンプル自体が無音のままではいけない")
+    }
+
+    /// containsNonZeroByte 相当の粗い判定 (ファイル全体に非ゼロbyteがあるか) では、PCMが
+    /// 全て無音でもRIFF/WAVEヘッダー分で true になってしまい判別できない。実際にPCM
+    /// サンプルをdecodeしたRMSでは、無音入力なら0になることを確認し、有音入力での
+    /// 非ゼロ判定 (上記2テスト) と対照させる。
+    func testSilentInputProducesZeroRmsInSavedPcm() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("app-audio.wav")
+        let track = try TrackWriter(trackID: .appAudio, role: .app, url: url)
+
+        track.receive(buffer: interleavedInt16Buffer(seconds: 1.0, sampleRate: 16_000, channels: 1, amplitude: 0), hostTime: 1)
+        _ = try track.finalize()
+
+        let inspection = try inspectWav(url)
+        XCTAssertFalse(inspection.pcm16.isEmpty)
+        XCTAssertEqual(rms(of: inspection.pcm16), 0, "無音入力を保存したPCMのRMSは0でなければならない")
     }
 
     /// 31秒分の音声を TrackWriter に通し、完全 WAV と 30秒+残り2秒 (1秒 overlap のため
