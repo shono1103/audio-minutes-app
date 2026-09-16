@@ -10,7 +10,7 @@ struct AudioMinutesApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
             RootView(model: model)
-                .frame(minWidth: 860, minHeight: 600)
+                .frame(minWidth: 1040, minHeight: 600)
                 .onAppear { delegate.model = model }
         }
         .commands {

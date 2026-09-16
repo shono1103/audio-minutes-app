@@ -19,8 +19,12 @@ struct SessionsView: View {
                 .tag(session.id)
                 .accessibilityElement(children: .combine)
             }
-            .frame(minWidth: 260, idealWidth: 300)
-            if model.selectedSession != nil { SessionDetailView(model: model) }
+            .frame(minWidth: 240, idealWidth: 280, maxWidth: 340)
+            if model.selectedSession != nil {
+                SessionDetailView(model: model)
+                    .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
+            }
             else { ContentUnavailableView("セッションを選択", systemImage: "doc.text.magnifyingglass") }
         }
         .navigationTitle("セッション")
